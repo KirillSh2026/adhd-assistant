@@ -287,7 +287,7 @@ JOIN item i ON dpi.item_id = i.id
 JOIN user_session us ON dp.user_session_id = us.id
 WHERE dp.plan_date = CURRENT_DATE
   AND us.energy_level = 'high'
-  AND i.energy_level IN ('high', 'medium', NULL)
+  AND (i.energy_level IN ('high', 'medium') OR i.energy_level IS NULL)
 ORDER BY dpi.position;
 ```
 
@@ -302,7 +302,7 @@ SELECT
 FROM focus_session fs
 JOIN item i ON fs.item_id = i.id
 JOIN user_session us ON fs.user_session_id = us.id
-WHERE fs.completed_at >= CURRENT_DATE - INTERVAL 7 DAY
+WHERE fs.completed_at >= CURRENT_DATE - INTERVAL '7 days'
 GROUP BY DATE(fs.completed_at), us.energy_level
 ORDER BY work_date DESC;
 ```

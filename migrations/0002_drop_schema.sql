@@ -1,0 +1,21 @@
+BEGIN;
+
+DROP TABLE IF EXISTS migration_run;
+DROP TABLE IF EXISTS focus_session;
+DROP TABLE IF EXISTS daily_plan_item;
+DROP TABLE IF EXISTS daily_plan;
+DROP TABLE IF EXISTS reminder;
+DROP TABLE IF EXISTS attachment;
+DROP TABLE IF EXISTS item_merge;
+DROP TABLE IF EXISTS item_audit;
+DROP TABLE IF EXISTS item_dependency;
+DROP TABLE IF EXISTS inbox_entry;
+DROP TABLE IF EXISTS item;
+DROP TABLE IF EXISTS user_session;
+DROP TABLE IF EXISTS user_profile;
+DROP TABLE IF EXISTS project;
+
+DROP FUNCTION IF EXISTS audit_item_update();
+DROP FUNCTION IF EXISTS set_updated_at();
+
+COMMIT;

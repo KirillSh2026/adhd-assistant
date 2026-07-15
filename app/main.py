@@ -1,61 +1,52 @@
 from datetime import datetime
-import json
+import os
+from pathlib import Path
 import sys
 
-def add_note(note_type, text, created_note):
-    with open("data/notes.json", "r", encoding="utf-8") as f:
-        notes = json.load(f)
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
-        notes.append({"type": note_type, "text": text, "datetime": created_note})
+from services.item_service import ItemService
+from storage.json_storage import JsonStorage
 
-        with open("data/notes.json", "w", encoding="utf-8") as f:
-            json.dump(notes, f, ensure_ascii=False, indent=2)
+
+def get_service() -> ItemService:
+    backend = os.getenv("ADHD_STORAGE_BACKEND", "json").strip().lower()
+    notes_path = os.getenv("ADHD_NOTES_PATH", "data/notes.json")
+    database_url = os.getenv("DATABASE_URL", "")
+
+    if backend == "postgres":
+        if not database_url:
+            raise ValueError("DATABASE_URL is required when ADHD_STORAGE_BACKEND=postgres")
+        from storage.postgres_storage import PostgresStorage
+
+        storage = PostgresStorage(dsn=database_url)
+    else:
+        storage = JsonStorage(path=notes_path)
+    return ItemService(storage=storage)
+
+
+def print_item(index: int, item) -> None:
+    if item.datetime:
+        print(f"{index}. ({item.datetime}) [{item.type}]: {item.text}")
+    else:
+        print(f"{index}. [{item.type}]: {item.text}")
 
 def main():
+    if len(sys.argv) < 2:
+        return
 
-    with open("data/notes.json", "r", encoding="utf-8") as f:
-        notes = json.load(f)
-    
+    service = get_service()
     note_type = "".join(sys.argv[1])
     text = " ".join(sys.argv[2:])
-    created_note = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-    filtered_notes = [note for note in notes if note.get('text', '').strip()]
-            
     if note_type == "list":
-        if text == "task":
-            for i, note in enumerate(filtered_notes, 1):
-                if note.get('type', '').strip() == "task":
-                    if note.get('datetime', ''):
-                        print(f"{i}. ({note.get('datetime', '')}) [{note.get('type', '')}]: {note.get('text', '')}")
-                    else:
-                        print(f"{i}. [{note.get('type', '')}]: {note.get('text', '')}")
-        if text == "note":
-            for i, note in enumerate(filtered_notes, 1):
-                if note.get('type', '').strip() == "note":
-                    if  note.get('datetime', ''):
-                        print(f"{i}. ({note.get('datetime', '')}) [{note.get('type', '')}]: {note.get('text', '')}")
-                    else:
-                        print(f"{i}. [{note.get('type', '')}]: {note.get('text', '')}")
-        if text == "idea":
-            for i, note in enumerate(filtered_notes, 1):
-                if note.get('type', '').strip() == "idea":
-                    if note.get('datetime', ''):
-                        print(f"{i}. ({note.get('datetime', '')}) [{note.get('type', '')}]: {note.get('text', '')}")
-                    else:
-                        print(f"{i}. [{note.get('type', '')}]: {note.get('text', '')}")
-        if text == "all" or text == "":
-            for i, note in enumerate(filtered_notes, 1):
-                if note.get('datetime', ''):
-                    print(f"{i}. ({note.get('datetime', '')}) [{note.get('type', '')}]: {note.get('text', '')}")
-                else:
-                    print(f"{i}. [{note.get('type', '')}]: {note.get('text', '')}")
+        for index, item in service.list_items(text):
+            print_item(index=index, item=item)
     elif note_type == "clear":
-        notes = []
-        with open("data/notes.json", "w", encoding="utf-8") as f:
-            json.dump(notes, f, ensure_ascii=False, indent=2)
+        service.clear_items()
     elif text:
-        add_note(note_type=note_type, text=text, created_note=created_note)
+        service.add_item(note_type=note_type, text=text, created_at=datetime.now())
 
 if __name__ == "__main__":
     main()
