@@ -64,6 +64,20 @@ def print_cluster(cluster_number: int, cluster: dict) -> None:
         print(f"  {member['index']}. [{member['type']}] {member['text']}")
 
 
+def print_merge_entry(entry: dict) -> None:
+    target_label = entry["target_index"] if entry["target_index"] is not None else entry["target_item_id"]
+    source_labels = [
+        str(index if index is not None else item_id)
+        for index, item_id in zip(entry["source_indices"], entry["source_item_ids"])
+    ]
+    undo_flag = "undoable" if entry["can_undo"] else "locked"
+    print(
+        f"[{undo_flag}] merge={entry['merge_id']} target={target_label} "
+        f"sources={','.join(source_labels)} at {entry['performed_at']}"
+    )
+    print(f"  reason: {entry['reason']}")
+
+
 def add_from_dictation(service: ItemService) -> None:
     args = [arg.strip() for arg in sys.argv[2:] if arg.strip()]
     note_type = None
@@ -151,6 +165,19 @@ def confirm_relation(service: ItemService) -> None:
     print(f"Confirmed relation {from_index} -> {to_index} as {relation_type}.")
 
 
+def reject_relation(service: ItemService) -> None:
+    if len(sys.argv) < 5:
+        raise ValueError(
+            "Usage: python app/main.py reject-relation <from_index> <to_index> <related|depends_on|duplicate_of>"
+        )
+
+    from_index = int(sys.argv[2])
+    to_index = int(sys.argv[3])
+    relation_type = sys.argv[4]
+    service.reject_relation(from_index=from_index, to_index=to_index, relation_type=relation_type)
+    print(f"Rejected suggested relation {from_index} -> {to_index} as {relation_type}.")
+
+
 def merge_items(service: ItemService) -> None:
     if len(sys.argv) < 4:
         raise ValueError(
@@ -171,6 +198,30 @@ def merge_items(service: ItemService) -> None:
     source_indices = [int(value) for value in args[1:]]
     service.merge_items(target_index=target_index, source_indices=source_indices, merge_reason=reason)
     print(f"Merged items {', '.join(str(index) for index in source_indices)} into {target_index}.")
+
+
+def list_merges(service: ItemService) -> None:
+    limit = int(sys.argv[2]) if len(sys.argv) >= 3 and sys.argv[2].strip() else 20
+    merges = service.list_merges(limit=limit)
+    if not merges:
+        print("No merges found.")
+        return
+    for entry in merges:
+        print_merge_entry(entry)
+
+
+def undo_merge(service: ItemService) -> None:
+    merge_id = sys.argv[2].strip() if len(sys.argv) >= 3 and sys.argv[2].strip() else None
+    result = service.undo_merge(merge_id=merge_id)
+    target_label = result["target_index"] if result["target_index"] is not None else result["target_item_id"]
+    source_labels = [
+        str(index if index is not None else item_id)
+        for index, item_id in zip(result["source_indices"], result["source_item_ids"])
+    ]
+    print(
+        f"Undo complete for merge {result['merge_id']}: restored sources {', '.join(source_labels)} "
+        f"and target {target_label}."
+    )
 
 
 def main():
@@ -199,13 +250,19 @@ def main():
         link_items(service=service)
     elif command == "confirm-relation":
         confirm_relation(service=service)
+    elif command == "reject-relation":
+        reject_relation(service=service)
     elif command == "merge-items":
         merge_items(service=service)
+    elif command == "list-merges":
+        list_merges(service=service)
+    elif command == "undo-merge":
+        undo_merge(service=service)
     elif command in SUPPORTED_ITEM_TYPES and text:
         service.add_item(note_type=command, text=text, created_at=datetime.now())
     elif text:
         raise ValueError(
-            "Unsupported command. Use task, note, idea, capture, dictate, suggest-relations, show-clusters, list-relations, link-items, confirm-relation, merge-items, list, or clear."
+            "Unsupported command. Use task, note, idea, capture, dictate, suggest-relations, show-clusters, list-relations, link-items, confirm-relation, reject-relation, merge-items, list-merges, undo-merge, list, or clear."
         )
 
 

@@ -11,7 +11,10 @@
   - Show similarity clusters (PostgreSQL): `python app/main.py show-clusters`
   - Link items explicitly (PostgreSQL): `python app/main.py link-items 2 5 depends_on "Finish base work first"`
   - Confirm a suggested relation (PostgreSQL): `python app/main.py confirm-relation 2 5 duplicate_of`
+  - Reject a suggested relation (PostgreSQL): `python app/main.py reject-relation 2 5 duplicate_of`
   - Merge duplicate items (PostgreSQL): `python app/main.py merge-items 2 5 --reason "Merging duplicates"`
+  - Show merge history (PostgreSQL): `python app/main.py list-merges`
+  - Undo last merge (PostgreSQL): `python app/main.py undo-merge`
   - List all items: `python app/main.py list all`
   - List one type: `python app/main.py list task` (also `note` or `idea`)
   - Clear all items: `python app/main.py clear`
@@ -56,7 +59,10 @@
   - Показать кластеры похожих элементов (PostgreSQL): `python app/main.py show-clusters`
   - Явно связать элементы (PostgreSQL): `python app/main.py link-items 2 5 depends_on "Сначала завершить базу"`
   - Подтвердить предложенную связь (PostgreSQL): `python app/main.py confirm-relation 2 5 duplicate_of`
+  - Отклонить предложенную связь (PostgreSQL): `python app/main.py reject-relation 2 5 duplicate_of`
   - Объединить дубликаты (PostgreSQL): `python app/main.py merge-items 2 5 --reason "Объединяем дубликаты"`
+  - Показать историю merge (PostgreSQL): `python app/main.py list-merges`
+  - Откатить последний merge (PostgreSQL): `python app/main.py undo-merge`
   - Вывести все элементы: `python app/main.py list all`
   - Вывести элементы одного типа: `python app/main.py list task` (также `note` или `idea`)
   - Очистить все элементы: `python app/main.py clear`

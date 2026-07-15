@@ -136,7 +136,23 @@ class ItemService:
             relationship_type=storage_relation_type,
         )
 
+    def reject_relation(self, from_index: int, to_index: int, relation_type: str) -> None:
+        items = self._get_relation_items()
+        from_item = self._resolve_item_by_index(from_index, items)
+        to_item = self._resolve_item_by_index(to_index, items)
+        storage_relation_type = self._to_storage_relationship_type(relation_type)
+        self.storage.reject_relation(
+            from_item_id=self._require_item_id(from_item),
+            to_item_id=self._require_item_id(to_item),
+            relationship_type=storage_relation_type,
+        )
+
     def merge_items(self, target_index: int, source_indices: list[int], merge_reason: str = "") -> None:
+        if not source_indices:
+            raise ValueError("At least one source item index is required for merge")
+        if len(set(source_indices)) != len(source_indices):
+            raise ValueError("Merge source indexes must be unique")
+
         items = self._get_relation_items()
         target_item = self._resolve_item_by_index(target_index, items)
         source_items = [self._resolve_item_by_index(index, items) for index in source_indices]
@@ -149,6 +165,39 @@ class ItemService:
             source_item_ids=[self._require_item_id(source_item) for source_item in source_items],
             merge_reason=final_reason,
         )
+
+    def list_merges(self, limit: int = 20) -> list[dict]:
+        self._require_advanced_storage()
+        items = self._get_relation_items()
+        item_index_by_id = self._build_item_index(items)
+        merges = self.storage.list_merges(limit=limit)
+        return [
+            {
+                "merge_id": merge["merge_id"],
+                "target_index": item_index_by_id.get(merge["target_item_id"]),
+                "target_item_id": merge["target_item_id"],
+                "source_indices": [item_index_by_id.get(item_id) for item_id in merge["source_item_ids"]],
+                "source_item_ids": merge["source_item_ids"],
+                "can_undo": merge["can_undo"],
+                "reason": merge["reason"],
+                "performed_at": merge["performed_at"],
+            }
+            for merge in merges
+        ]
+
+    def undo_merge(self, merge_id: str | None = None) -> dict:
+        self._require_advanced_storage()
+        result = self.storage.undo_last_merge(merge_id=merge_id)
+        items = self._get_relation_items()
+        item_index_by_id = self._build_item_index(items)
+        return {
+            "merge_id": result["merge_id"],
+            "target_index": item_index_by_id.get(result["target_item_id"]),
+            "target_item_id": result["target_item_id"],
+            "source_indices": [item_index_by_id.get(item_id) for item_id in result["source_item_ids"]],
+            "source_item_ids": result["source_item_ids"],
+            "reason": result["reason"],
+        }
 
     def _format_suggestion(
         self,

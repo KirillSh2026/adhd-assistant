@@ -14,7 +14,10 @@ python app/main.py show-clusters
 python app/main.py list-relations
 python app/main.py link-items 2 5 depends_on "Сначала нужна базовая задача"
 python app/main.py confirm-relation 1 3 duplicate_of
+python app/main.py reject-relation 1 3 duplicate_of
 python app/main.py merge-items 1 3 --reason "Объединяем дубликаты"
+python app/main.py list-merges
+python app/main.py undo-merge
 python app/main.py list all
 python app/main.py list task
 python app/main.py clear
@@ -60,8 +63,18 @@ python app/main.py link-items 3 7 duplicate_of "Повтор одной и то�
 # Подтвердить предложенную связь
 python app/main.py confirm-relation 3 7 duplicate_of
 
+# Отклонить неподтвержденное предложение
+python app/main.py reject-relation 3 7 duplicate_of
+
 # Объединить несколько записей в одну
 python app/main.py merge-items 3 7 8 --reason "Объединяем дубликаты идеи"
+
+# Просмотреть историю merge и откатить последний merge
+python app/main.py list-merges
+python app/main.py undo-merge
+
+# Откатить конкретный merge по id
+python app/main.py undo-merge <merge_id>
 ```
 
 Язык распознавания по умолчанию — `ru-RU`, изменить можно через `ADHD_DICTATE_LANGUAGE`:

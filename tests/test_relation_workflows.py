@@ -17,6 +17,8 @@ class FakeAdvancedStorage:
         self.upsert_calls = []
         self.confirm_calls = []
         self.merge_calls = []
+        self.reject_calls = []
+        self.undo_calls = []
 
     def supports_advanced_relations(self) -> bool:
         return True
@@ -60,6 +62,30 @@ class FakeAdvancedStorage:
 
     def merge_items(self, target_item_id: str, source_item_ids: list[str], merge_reason: str) -> None:
         self.merge_calls.append((target_item_id, source_item_ids, merge_reason))
+
+    def reject_relation(self, from_item_id: str, to_item_id: str, relationship_type: str) -> None:
+        self.reject_calls.append((from_item_id, to_item_id, relationship_type))
+
+    def list_merges(self, limit: int = 20) -> list[dict]:
+        return [
+            {
+                "merge_id": "m1",
+                "target_item_id": "1",
+                "source_item_ids": ["2"],
+                "reason": "Merged duplicates",
+                "can_undo": True,
+                "performed_at": "2026-01-01 10:30:00",
+            }
+        ]
+
+    def undo_last_merge(self, merge_id: str | None = None) -> dict:
+        self.undo_calls.append(merge_id)
+        return {
+            "merge_id": merge_id or "m1",
+            "target_item_id": "1",
+            "source_item_ids": ["2"],
+            "reason": "Merged duplicates",
+        }
 
 
 def test_suggest_relations_persists_suggestions():
@@ -110,6 +136,45 @@ def test_merge_items_passes_ids_and_reason():
     service.merge_items(1, [2], "Объединяем дубликаты")
 
     assert storage.merge_calls == [("1", ["2"], "Объединяем дубликаты")]
+
+
+def test_merge_items_rejects_duplicate_source_indexes():
+    storage = FakeAdvancedStorage()
+    service = ItemService(storage)
+
+    with pytest.raises(ValueError):
+        service.merge_items(1, [2, 2], "bad input")
+
+
+def test_reject_relation_uses_resolved_indexes():
+    storage = FakeAdvancedStorage()
+    service = ItemService(storage)
+
+    service.reject_relation(1, 2, "duplicate_of")
+
+    assert storage.reject_calls == [("1", "2", "duplicate_of")]
+
+
+def test_list_merges_formats_indexes():
+    storage = FakeAdvancedStorage()
+    service = ItemService(storage)
+
+    merges = service.list_merges(limit=5)
+
+    assert merges[0]["merge_id"] == "m1"
+    assert merges[0]["target_index"] == 1
+    assert merges[0]["source_indices"] == [2]
+
+
+def test_undo_merge_returns_index_mapping():
+    storage = FakeAdvancedStorage()
+    service = ItemService(storage)
+
+    result = service.undo_merge(merge_id="m1")
+
+    assert storage.undo_calls == ["m1"]
+    assert result["target_index"] == 1
+    assert result["source_indices"] == [2]
 
 
 def test_json_storage_rejects_advanced_relation_commands(tmp_path):
