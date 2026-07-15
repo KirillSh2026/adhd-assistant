@@ -1,9 +1,10 @@
 AI/
-├── 00_constitution.md      # Принципы проекта
-├── 01_architecture.md      # Архитектура и ER-модель
-├── 02_coding_rules.md      # Стандарты кода
-├── 03_workflow.md          # Как вести разработку
-├── 04_ai_behavior.md       # Как ИИ должен себя вести
-├── 05_product_vision.md    # Видение продукта
+├── 00_constitution.md      # Принципы проекта (начните отсюда)
+├── 01_architecture.md      # Архитектура БД и анализ схемы
+├── 02_coding_rules.md      # Стандарты кода (Python, SQL, Git)
+├── 02_database_schema.sql  # Полная целевая схема БД
+├── 03_migration.sql        # Скрипт миграции с JSON на БД
+├── 04_workflow.md          # Как вести разработку
+├── 05_product_vision.md    # Видение продукта и функции
 ├── 06_roadmap.md           # План развития
-└── 07_prompt.md            # Финальный системный промпт для Claude
+└── 07_prompt.md            # Системный контекст для всех AI-агентов (используйте для каждого сеанса)
