@@ -5,6 +5,7 @@ from datetime import datetime
 import psycopg
 from psycopg.types.json import Jsonb
 
+from core.exceptions import StorageEntityNotFoundError, StorageError
 from models.item import Item
 
 
@@ -12,9 +13,6 @@ class PostgresStorage:
     def __init__(self, dsn: str, project_name: str = "Inbox"):
         self.dsn = dsn
         self.project_name = project_name
-
-    def supports_advanced_relations(self) -> bool:
-        return True
 
     def _ensure_project_id(self, conn: psycopg.Connection) -> str:
         with conn.cursor() as cur:
@@ -33,7 +31,7 @@ class PostgresStorage:
             )
             created = cur.fetchone()
             if not created:
-                raise RuntimeError("Failed to create default project")
+                raise StorageError("Failed to create default project")
             return str(created[0])
 
     def load_items(self) -> list[Item]:
@@ -214,7 +212,7 @@ class PostgresStorage:
                         (from_item_id, to_item_id, relationship_type),
                     )
                     if cur.rowcount == 0:
-                        raise ValueError("Relation suggestion not found")
+                        raise StorageEntityNotFoundError("Relation suggestion not found")
             conn.commit()
 
     def reject_relation(self, from_item_id: str, to_item_id: str, relationship_type: str) -> None:
@@ -237,7 +235,7 @@ class PostgresStorage:
                         (from_item_id, to_item_id, relationship_type),
                     )
                     if cur.rowcount == 0:
-                        raise ValueError("Unconfirmed relation suggestion not found")
+                        raise StorageEntityNotFoundError("Unconfirmed relation suggestion not found")
             conn.commit()
 
     def list_relations(self, item_id: str | None = None) -> list[dict]:
@@ -290,7 +288,7 @@ class PostgresStorage:
     def merge_items(self, target_item_id: str, source_item_ids: list[str], merge_reason: str) -> None:
         unique_source_ids = [item_id for item_id in dict.fromkeys(source_item_ids) if item_id != target_item_id]
         if not unique_source_ids:
-            raise ValueError("At least one source item is required for merge")
+            raise StorageError("At least one source item is required for merge")
 
         with psycopg.connect(self.dsn) as conn:
             project_id = self._ensure_project_id(conn)
@@ -310,7 +308,7 @@ class PostgresStorage:
                     rows = cur.fetchall()
 
                     if len(rows) != len(all_ids):
-                        raise ValueError("One or more items were not found in the active project")
+                        raise StorageEntityNotFoundError("One or more items were not found in the active project")
 
                     items_by_id = {
                         str(row[0]): {
@@ -323,7 +321,7 @@ class PostgresStorage:
                         for row in rows
                     }
                     if any(items_by_id[item_id]["status"] == "archived" for item_id in all_ids):
-                        raise ValueError("Archived items cannot be merged")
+                        raise StorageError("Archived items cannot be merged")
 
                     target_item = items_by_id[target_item_id]
                     source_items = [items_by_id[item_id] for item_id in unique_source_ids]
@@ -498,7 +496,7 @@ class PostgresStorage:
                         )
                     row = cur.fetchone()
                     if not row:
-                        raise ValueError("No merge found to undo")
+                        raise StorageEntityNotFoundError("No merge found to undo")
 
                     selected_merge_id = str(row[0])
                     target_item_id = str(row[1])
@@ -508,17 +506,17 @@ class PostgresStorage:
                     can_undo = bool(row[5])
 
                     if not can_undo:
-                        raise ValueError("This merge can no longer be undone")
+                        raise StorageError("This merge can no longer be undone")
 
                     target_before = merge_payload.get("target_before")
                     source_items = merge_payload.get("source_items")
                     if not isinstance(target_before, dict) or not isinstance(source_items, list):
-                        raise RuntimeError("Merge payload does not contain required rollback snapshot")
+                        raise StorageError("Merge payload does not contain required rollback snapshot")
 
                     cur.execute("SELECT text FROM item WHERE id = %s LIMIT 1", (target_item_id,))
                     target_row = cur.fetchone()
                     if not target_row:
-                        raise ValueError("Target item for merge rollback was not found")
+                        raise StorageEntityNotFoundError("Target item for merge rollback was not found")
                     current_target_text = str(target_row[0] or "")
 
                     cur.execute(
@@ -601,7 +599,7 @@ class PostgresStorage:
 
     def _assert_relation_items_accessible(self, cur, from_item_id: str, to_item_id: str) -> None:
         if from_item_id == to_item_id:
-            raise ValueError("Relation cannot reference the same item on both sides")
+            raise StorageError("Relation cannot reference the same item on both sides")
 
         cur.execute(
             """
@@ -613,15 +611,15 @@ class PostgresStorage:
         )
         rows = cur.fetchall()
         if len(rows) != 2:
-            raise ValueError("One or both relation items were not found")
+            raise StorageEntityNotFoundError("One or both relation items were not found")
 
         rows_by_id = {str(row[0]): (str(row[1]) if row[1] else None, row[2]) for row in rows}
         from_project_id, from_status = rows_by_id[from_item_id]
         to_project_id, to_status = rows_by_id[to_item_id]
         if not from_project_id or not to_project_id or from_project_id != to_project_id:
-            raise ValueError("Relation items must belong to the same project")
+            raise StorageError("Relation items must belong to the same project")
         if from_status == "archived" or to_status == "archived":
-            raise ValueError("Archived items cannot be linked")
+            raise StorageError("Archived items cannot be linked")
 
     def _build_merged_text(self, target_text: str, source_texts: list[str]) -> str:
         ordered_texts: list[str] = []

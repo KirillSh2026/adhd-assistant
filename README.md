@@ -25,6 +25,10 @@ python app/main.py clear
 
 По умолчанию CLI использует JSON-хранилище: `data/notes.json`.
 
+Конфигурация окружения централизована в `config/settings.py` через `pydantic-settings`.
+CLI читает переменные (`ADHD_STORAGE_BACKEND`, `ADHD_NOTES_PATH`, `DATABASE_URL`, `ADHD_DICTATE_LANGUAGE`)
+из одного места при запуске.
+
 Команда `capture` автоматически определяет тип `task|note|idea` по тексту:
 - `python app/main.py capture "Купить продукты"` -> `task`
 - `python app/main.py capture "Идея: сделать быстрый режим фокуса"` -> `idea`

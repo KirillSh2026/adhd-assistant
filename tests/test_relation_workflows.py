@@ -2,6 +2,7 @@ from datetime import datetime
 
 import pytest
 
+from core.exceptions import UnsupportedStorageCapabilityError
 from models.item import Item
 from services.item_service import ItemService
 
@@ -19,9 +20,6 @@ class FakeAdvancedStorage:
         self.merge_calls = []
         self.reject_calls = []
         self.undo_calls = []
-
-    def supports_advanced_relations(self) -> bool:
-        return True
 
     def load_items(self):
         return self.items
@@ -182,10 +180,10 @@ def test_json_storage_rejects_advanced_relation_commands(tmp_path):
 
     service = ItemService(JsonStorage(str(tmp_path / "notes.json")))
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(UnsupportedStorageCapabilityError):
         service.suggest_relations()
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(UnsupportedStorageCapabilityError):
         service.link_items(1, 2, "related")
 
 

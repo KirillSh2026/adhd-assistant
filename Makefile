@@ -1,7 +1,7 @@
 .PHONY: check test test-one migrate-up migrate-down migrate-import-json migrate-rollback
 
 check:
-	python -m py_compile app/main.py models/item.py services/item_service.py services/item_type_classifier.py services/relation_analysis_service.py services/speech_to_text_service.py storage/json_storage.py storage/postgres_storage.py
+	python -m py_compile app/main.py config/settings.py core/exceptions.py interfaces/storage.py models/item.py services/item_service.py services/item_type_classifier.py services/relation_analysis_service.py services/speech_to_text_service.py storage/json_storage.py storage/postgres_storage.py
 
 test:
 	pytest -q

@@ -29,10 +29,12 @@
 ## Architecture
 
 - `app/main.py` is the runnable entrypoint and routes all CLI actions through `ItemService`.
+- `config/settings.py` centralizes environment loading via `pydantic-settings` (single source for `ADHD_STORAGE_BACKEND`, `ADHD_NOTES_PATH`, `DATABASE_URL`, `ADHD_DICTATE_LANGUAGE`).
 - `services/item_service.py` contains the CLI-facing behavior (add/list/clear/capture) and keeps backward-compatible list formatting semantics.
 - `services/speech_to_text_service.py` handles speech-to-text for the `dictate` CLI command.
 - `services/item_type_classifier.py` auto-classifies captured text into `task`, `note`, or `idea`.
 - `services/relation_analysis_service.py` suggests duplicate/related links and builds similarity clusters.
+- `interfaces/storage.py` defines the storage contract; `ItemService` works through this interface and does not branch on JSON/PostgreSQL internals.
 - `storage/json_storage.py` is the default storage backend using `data/notes.json`.
 - `storage/postgres_storage.py` is the PostgreSQL backend (`ADHD_STORAGE_BACKEND=postgres`, `DATABASE_URL` required).
 - `migrations/0001_init_postgres.sql` is the canonical PostgreSQL schema; `migrations/0002_drop_schema.sql` is full rollback.
@@ -77,10 +79,12 @@
 ## Архитектура
 
 - `app/main.py` — исполняемая точка входа CLI; все команды проходят через `ItemService`.
+- `config/settings.py` — централизованная загрузка окружения через `pydantic-settings` (`ADHD_STORAGE_BACKEND`, `ADHD_NOTES_PATH`, `DATABASE_URL`, `ADHD_DICTATE_LANGUAGE`).
 - `services/item_service.py` — слой бизнес-логики CLI (add/list/clear/capture), сохраняющий совместимость вывода.
 - `services/speech_to_text_service.py` — распознавание речи в текст для команды `dictate`.
 - `services/item_type_classifier.py` — автоопределение типа `task`, `note`, `idea` по тексту.
 - `services/relation_analysis_service.py` — поиск похожих/связанных элементов и построение кластеров.
+- `interfaces/storage.py` — контракт storage-слоя; `ItemService` не знает о деталях JSON/PostgreSQL backend.
 - `storage/json_storage.py` — backend по умолчанию (`data/notes.json`).
 - `storage/postgres_storage.py` — PostgreSQL backend (`ADHD_STORAGE_BACKEND=postgres`, нужен `DATABASE_URL`).
 - `migrations/0001_init_postgres.sql` — каноничная PostgreSQL-схема; `migrations/0002_drop_schema.sql` — полный rollback.
