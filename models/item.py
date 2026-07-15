@@ -11,6 +11,8 @@ class Item:
     type: str
     text: str
     datetime: str | None = None
+    id: str | None = None
+    status: str | None = None
 
     @classmethod
     def from_legacy_dict(cls, payload: dict) -> "Item":
@@ -18,6 +20,8 @@ class Item:
             type=str(payload.get("type", "")),
             text=str(payload.get("text", "")),
             datetime=str(payload["datetime"]) if payload.get("datetime") else None,
+            id=str(payload["id"]) if payload.get("id") else None,
+            status=str(payload["status"]) if payload.get("status") else None,
         )
 
     @classmethod

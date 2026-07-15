@@ -11,6 +11,9 @@ class JsonStorage:
         self.path = Path(path)
         self._ensure_file()
 
+    def supports_advanced_relations(self) -> bool:
+        return False
+
     def _ensure_file(self) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if not self.path.exists():

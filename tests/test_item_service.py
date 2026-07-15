@@ -30,3 +30,15 @@ def test_filtering_keeps_order_index_over_filtered_items(tmp_path):
 
     tasks = service.list_items("task")
     assert [(index, item.text) for index, item in tasks] == [(1, "A"), (3, "C")]
+
+
+def test_add_captured_item_classifies_text(tmp_path):
+    path = tmp_path / "notes.json"
+    storage = JsonStorage(str(path))
+    service = ItemService(storage)
+
+    resolved_type = service.add_captured_item("Купить билеты на поезд", datetime(2026, 1, 1, 10, 0, 0))
+
+    items = service.list_items("all")
+    assert resolved_type == "task"
+    assert items[0][1].type == "task"

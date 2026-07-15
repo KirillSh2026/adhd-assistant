@@ -4,6 +4,14 @@
 
 - Run the CLI from the repository root because it uses the relative path `data/notes.json`:
   - Add an item: `python app/main.py task "Buy groceries"`
+  - Add with auto-detected type: `python app/main.py capture "Buy groceries tomorrow"`
+  - Add from dictation (microphone): `python app/main.py dictate`
+  - Add from dictation (audio file): `python app/main.py dictate /path/to/audio.wav`
+  - Suggest similar/related items (PostgreSQL): `python app/main.py suggest-relations`
+  - Show similarity clusters (PostgreSQL): `python app/main.py show-clusters`
+  - Link items explicitly (PostgreSQL): `python app/main.py link-items 2 5 depends_on "Finish base work first"`
+  - Confirm a suggested relation (PostgreSQL): `python app/main.py confirm-relation 2 5 duplicate_of`
+  - Merge duplicate items (PostgreSQL): `python app/main.py merge-items 2 5 --reason "Merging duplicates"`
   - List all items: `python app/main.py list all`
   - List one type: `python app/main.py list task` (also `note` or `idea`)
   - Clear all items: `python app/main.py clear`
@@ -18,7 +26,10 @@
 ## Architecture
 
 - `app/main.py` is the runnable entrypoint and routes all CLI actions through `ItemService`.
-- `services/item_service.py` contains the CLI-facing behavior (add/list/clear) and keeps backward-compatible list formatting semantics.
+- `services/item_service.py` contains the CLI-facing behavior (add/list/clear/capture) and keeps backward-compatible list formatting semantics.
+- `services/speech_to_text_service.py` handles speech-to-text for the `dictate` CLI command.
+- `services/item_type_classifier.py` auto-classifies captured text into `task`, `note`, or `idea`.
+- `services/relation_analysis_service.py` suggests duplicate/related links and builds similarity clusters.
 - `storage/json_storage.py` is the default storage backend using `data/notes.json`.
 - `storage/postgres_storage.py` is the PostgreSQL backend (`ADHD_STORAGE_BACKEND=postgres`, `DATABASE_URL` required).
 - `migrations/0001_init_postgres.sql` is the canonical PostgreSQL schema; `migrations/0002_drop_schema.sql` is full rollback.
@@ -38,6 +49,14 @@
 
 - Запускайте CLI из корня репозитория: оно использует относительный путь `data/notes.json`.
   - Добавить элемент: `python app/main.py task "Купить продукты"`
+  - Добавить с автоопределением типа: `python app/main.py capture "Купить продукты завтра"`
+  - Добавить через диктовку (микрофон): `python app/main.py dictate`
+  - Добавить через диктовку (аудиофайл): `python app/main.py dictate /path/to/audio.wav`
+  - Предложить похожие/связанные элементы (PostgreSQL): `python app/main.py suggest-relations`
+  - Показать кластеры похожих элементов (PostgreSQL): `python app/main.py show-clusters`
+  - Явно связать элементы (PostgreSQL): `python app/main.py link-items 2 5 depends_on "Сначала завершить базу"`
+  - Подтвердить предложенную связь (PostgreSQL): `python app/main.py confirm-relation 2 5 duplicate_of`
+  - Объединить дубликаты (PostgreSQL): `python app/main.py merge-items 2 5 --reason "Объединяем дубликаты"`
   - Вывести все элементы: `python app/main.py list all`
   - Вывести элементы одного типа: `python app/main.py list task` (также `note` или `idea`)
   - Очистить все элементы: `python app/main.py clear`
@@ -52,7 +71,10 @@
 ## Архитектура
 
 - `app/main.py` — исполняемая точка входа CLI; все команды проходят через `ItemService`.
-- `services/item_service.py` — слой бизнес-логики CLI (add/list/clear), сохраняющий совместимость вывода.
+- `services/item_service.py` — слой бизнес-логики CLI (add/list/clear/capture), сохраняющий совместимость вывода.
+- `services/speech_to_text_service.py` — распознавание речи в текст для команды `dictate`.
+- `services/item_type_classifier.py` — автоопределение типа `task`, `note`, `idea` по тексту.
+- `services/relation_analysis_service.py` — поиск похожих/связанных элементов и построение кластеров.
 - `storage/json_storage.py` — backend по умолчанию (`data/notes.json`).
 - `storage/postgres_storage.py` — PostgreSQL backend (`ADHD_STORAGE_BACKEND=postgres`, нужен `DATABASE_URL`).
 - `migrations/0001_init_postgres.sql` — каноничная PostgreSQL-схема; `migrations/0002_drop_schema.sql` — полный rollback.

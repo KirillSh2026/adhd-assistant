@@ -6,12 +6,70 @@ CLI-прототип личного помощника для пользоват
 
 ```bash
 python app/main.py task "Купить продукты"
+python app/main.py capture "Купить продукты на завтра"
+python app/main.py dictate
+python app/main.py dictate /path/to/note.wav
+python app/main.py suggest-relations
+python app/main.py show-clusters
+python app/main.py list-relations
+python app/main.py link-items 2 5 depends_on "Сначала нужна базовая задача"
+python app/main.py confirm-relation 1 3 duplicate_of
+python app/main.py merge-items 1 3 --reason "Объединяем дубликаты"
 python app/main.py list all
 python app/main.py list task
 python app/main.py clear
 ```
 
 По умолчанию CLI использует JSON-хранилище: `data/notes.json`.
+
+Команда `capture` автоматически определяет тип `task|note|idea` по тексту:
+- `python app/main.py capture "Купить продукты"` -> `task`
+- `python app/main.py capture "Идея: сделать быстрый режим фокуса"` -> `idea`
+
+Команда `dictate` распознает речь в текст и затем автоматически определяет тип:
+- из микрофона: `python app/main.py dictate`
+- из файла: `python app/main.py dictate /path/to/audio.wav`
+- при необходимости тип можно задать явно: `python app/main.py dictate task /path/to/audio.wav`
+
+Аудиофайл используется только для распознавания и **не сохраняется** в хранилище.
+
+## Связи, похожесть и объединение
+
+Расширенные команды отношений работают с PostgreSQL backend, потому что сохраняют данные в
+`item_dependency` и `item_merge`.
+
+```bash
+export ADHD_STORAGE_BACKEND=postgres
+export DATABASE_URL=******localhost:5432/adhd_assistant
+
+# Найти похожие записи и сохранить предложения в item_dependency
+python app/main.py suggest-relations
+
+# Показать кластеры похожих записей
+python app/main.py show-clusters
+
+# Показать все сохраненные связи или связи одного элемента
+python app/main.py list-relations
+python app/main.py list-relations 2
+
+# Явно связать элементы
+python app/main.py link-items 2 5 related "Обе записи про один контекст"
+python app/main.py link-items 4 2 depends_on "Сначала надо завершить подготовку"
+python app/main.py link-items 3 7 duplicate_of "Повтор одной и той же идеи"
+
+# Подтвердить предложенную связь
+python app/main.py confirm-relation 3 7 duplicate_of
+
+# Объединить несколько записей в одну
+python app/main.py merge-items 3 7 8 --reason "Объединяем дубликаты идеи"
+```
+
+Язык распознавания по умолчанию — `ru-RU`, изменить можно через `ADHD_DICTATE_LANGUAGE`:
+
+```bash
+export ADHD_DICTATE_LANGUAGE=en-US
+python app/main.py dictate
+```
 
 ## Backend-хранилища
 
