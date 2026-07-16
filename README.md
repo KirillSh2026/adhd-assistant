@@ -106,6 +106,30 @@ export DATABASE_URL=postgresql://user:pass@localhost:5432/adhd_assistant
 python app/main.py list all
 ```
 
+
+## Архитектура
+
+### Слой CLI
+
+CLI-логика организована в отдельном слое `cli/` для разделения ответственности:
+
+- **`app/main.py`** — тонкая точка входа: загружает настройки, создает сервис, делегирует в CLI layer
+- **`cli/formatters.py`** — функции форматирования вывода (print_item, print_relation и др.)
+- **`cli/utils.py`** — утилиты парсинга аргументов (parse_int и др.)
+- **`cli/commands/`** — обработчики команд, сгруппированные по функциональности:
+  - `cli/commands/__init__.py` — управление элементами (list/clear/add-by-type)
+  - `cli/commands/capture_commands.py` — захват текста и диктовка
+  - `cli/commands/relation_commands.py` — связи и зависимости
+  - `cli/commands/merge_commands.py` — объединение элементов и история
+- **`cli/dispatcher.py`** — маршрутизирует команды к обработчикам
+
+### Слой сервисов и хранилища
+
+- **`services/item_service.py`** — бизнес-логика CLI, работает через интерфейс Storage
+- **`interfaces/storage.py`** — контракт Storage; ItemService не знает о JSON/PostgreSQL
+- **`storage/json_storage.py`** и **`storage/postgres_storage.py`** — реализации Storage
+- **`config/settings.py`** — централизованная загрузка конфигурации через pydantic-settings
+- **`core/exceptions.py`** — иерархия доменных исключений
 ## Зависимости
 
 ```bash

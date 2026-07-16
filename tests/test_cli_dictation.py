@@ -1,6 +1,11 @@
+"""Tests for CLI command handlers - argument parsing and execution without sys.argv."""
+
 from datetime import datetime
 
-import app.main as cli_main
+from cli.commands import capture_commands
+from cli.commands import relation_commands
+from cli.commands import merge_commands
+from cli.commands import list_items, clear_items, add_item_by_type
 
 
 class FakeService:
@@ -17,8 +22,8 @@ class FakeService:
         self.clusters_result = []
         self.merges_result = []
 
-    def add_item(self, note_type: str, text: str, created_at: datetime) -> None:
-        self.calls.append((note_type, text, created_at))
+    def add_item(self, note_type: str, text: str) -> None:
+        self.calls.append((note_type, text))
 
     def add_captured_item(self, text: str, created_at: datetime, note_type: str | None = None) -> str:
         if note_type is None:
@@ -32,10 +37,10 @@ class FakeService:
         return note_type
 
     def clear_items(self) -> None:
-        raise AssertionError("clear_items should not be called in dictation tests")
+        raise AssertionError("clear_items should not be called in these tests")
 
     def list_items(self, list_type: str):
-        raise AssertionError("list_items should not be called in dictation tests")
+        raise AssertionError("list_items should not be called in these tests")
 
     def suggest_relations(self):
         return self.suggestions_result
@@ -76,6 +81,7 @@ class FakeService:
 
 
 def test_dictate_from_file_adds_item(monkeypatch):
+    """Test dictation from audio file with automatic type classification."""
     fake_service = FakeService()
 
     class FakeSpeechToTextService:
@@ -91,11 +97,8 @@ def test_dictate_from_file_adds_item(monkeypatch):
         def transcribe_microphone(self) -> str:
             raise AssertionError("Microphone branch should not be used")
 
-    monkeypatch.setattr(cli_main, "get_service", lambda: fake_service)
-    monkeypatch.setattr(cli_main, "SpeechToTextService", FakeSpeechToTextService)
-    monkeypatch.setattr(cli_main.sys, "argv", ["main.py", "dictate", "voice.wav"])
-
-    cli_main.main()
+    monkeypatch.setattr(capture_commands, "SpeechToTextService", FakeSpeechToTextService)
+    capture_commands.add_from_dictation(fake_service, ["voice.wav"])
 
     assert len(fake_service.calls) == 1
     note_type, text, created_at = fake_service.calls[0]
@@ -105,6 +108,7 @@ def test_dictate_from_file_adds_item(monkeypatch):
 
 
 def test_dictate_from_microphone_adds_item(monkeypatch):
+    """Test dictation from microphone with automatic type classification."""
     fake_service = FakeService()
 
     class FakeSpeechToTextService:
@@ -119,11 +123,8 @@ def test_dictate_from_microphone_adds_item(monkeypatch):
         def transcribe_microphone(self) -> str:
             return "Идея на потом"
 
-    monkeypatch.setattr(cli_main, "get_service", lambda: fake_service)
-    monkeypatch.setattr(cli_main, "SpeechToTextService", FakeSpeechToTextService)
-    monkeypatch.setattr(cli_main.sys, "argv", ["main.py", "dictate"])
-
-    cli_main.main()
+    monkeypatch.setattr(capture_commands, "SpeechToTextService", FakeSpeechToTextService)
+    capture_commands.add_from_dictation(fake_service, [])
 
     assert len(fake_service.calls) == 1
     note_type, text, created_at = fake_service.calls[0]
@@ -132,13 +133,10 @@ def test_dictate_from_microphone_adds_item(monkeypatch):
     assert isinstance(created_at, datetime)
 
 
-def test_capture_text_auto_classifies_item(monkeypatch):
+def test_capture_text_auto_classifies_item():
+    """Test text capture with automatic type classification."""
     fake_service = FakeService()
-
-    monkeypatch.setattr(cli_main, "get_service", lambda: fake_service)
-    monkeypatch.setattr(cli_main.sys, "argv", ["main.py", "capture", "Купить", "лекарства"])
-
-    cli_main.main()
+    capture_commands.add_from_text_capture(fake_service, ["Купить", "лекарства"])
 
     assert len(fake_service.calls) == 1
     note_type, text, created_at = fake_service.calls[0]
@@ -148,6 +146,7 @@ def test_capture_text_auto_classifies_item(monkeypatch):
 
 
 def test_dictate_allows_manual_type_override(monkeypatch):
+    """Test dictation with explicit type override."""
     fake_service = FakeService()
 
     class FakeSpeechToTextService:
@@ -163,11 +162,8 @@ def test_dictate_allows_manual_type_override(monkeypatch):
         def transcribe_microphone(self) -> str:
             raise AssertionError("Microphone branch should not be used")
 
-    monkeypatch.setattr(cli_main, "get_service", lambda: fake_service)
-    monkeypatch.setattr(cli_main, "SpeechToTextService", FakeSpeechToTextService)
-    monkeypatch.setattr(cli_main.sys, "argv", ["main.py", "dictate", "task", "voice.wav"])
-
-    cli_main.main()
+    monkeypatch.setattr(capture_commands, "SpeechToTextService", FakeSpeechToTextService)
+    capture_commands.add_from_dictation(fake_service, ["task", "voice.wav"])
 
     assert len(fake_service.calls) == 1
     note_type, text, created_at = fake_service.calls[0]
@@ -176,76 +172,56 @@ def test_dictate_allows_manual_type_override(monkeypatch):
     assert isinstance(created_at, datetime)
 
 
-def test_link_items_passes_relation_arguments(monkeypatch):
+def test_link_items_passes_relation_arguments():
+    """Test link-items parses and passes arguments correctly."""
     fake_service = FakeService()
+    relation_commands.link_items(fake_service, ["2", "5", "depends_on", "Сначала", "нужна", "база"])
 
-    monkeypatch.setattr(cli_main, "get_service", lambda: fake_service)
-    monkeypatch.setattr(
-        cli_main.sys,
-        "argv",
-        ["main.py", "link-items", "2", "5", "depends_on", "Нужно", "сначала", "закончить", "базу"],
-    )
-
-    cli_main.main()
-
-    assert fake_service.link_calls == [(2, 5, "depends_on", "Нужно сначала закончить базу")]
+    assert len(fake_service.link_calls) == 1
+    from_index, to_index, rel_type, reason = fake_service.link_calls[0]
+    assert from_index == 2
+    assert to_index == 5
+    assert rel_type == "depends_on"
+    assert reason == "Сначала нужна база"
 
 
-def test_merge_items_parses_reason(monkeypatch):
+def test_merge_items_parses_reason():
+    """Test merge-items extracts and passes reason correctly."""
     fake_service = FakeService()
+    merge_commands.merge_items(fake_service, ["1", "3", "--reason", "Объединяем", "дубликаты"])
 
-    monkeypatch.setattr(cli_main, "get_service", lambda: fake_service)
-    monkeypatch.setattr(
-        cli_main.sys,
-        "argv",
-        ["main.py", "merge-items", "2", "4", "6", "--reason", "Объединяем", "дубликаты"],
-    )
-
-    cli_main.main()
-
-    assert fake_service.merge_calls == [(2, [4, 6], "Объединяем дубликаты")]
+    assert len(fake_service.merge_calls) == 1
+    target_index, source_indices, reason = fake_service.merge_calls[0]
+    assert target_index == 1
+    assert source_indices == [3]
+    assert reason == "Объединяем дубликаты"
 
 
-def test_reject_relation_passes_relation_arguments(monkeypatch):
+def test_reject_relation_passes_relation_arguments():
+    """Test reject-relation passes arguments correctly."""
     fake_service = FakeService()
+    relation_commands.reject_relation(fake_service, ["1", "3", "duplicate_of"])
 
-    monkeypatch.setattr(cli_main, "get_service", lambda: fake_service)
-    monkeypatch.setattr(cli_main.sys, "argv", ["main.py", "reject-relation", "2", "5", "duplicate_of"])
+    assert len(fake_service.reject_calls) == 1
+    from_index, to_index, rel_type = fake_service.reject_calls[0]
+    assert from_index == 1
+    assert to_index == 3
+    assert rel_type == "duplicate_of"
 
-    cli_main.main()
 
-    assert fake_service.reject_calls == [(2, 5, "duplicate_of")]
-
-
-def test_undo_merge_passes_merge_id(monkeypatch):
+def test_undo_merge_passes_merge_id():
+    """Test undo-merge passes merge_id correctly."""
     fake_service = FakeService()
+    merge_commands.undo_merge(fake_service, ["merge123"])
 
-    monkeypatch.setattr(cli_main, "get_service", lambda: fake_service)
-    monkeypatch.setattr(cli_main.sys, "argv", ["main.py", "undo-merge", "m10"])
-
-    cli_main.main()
-
-    assert fake_service.undo_merge_calls == ["m10"]
+    assert len(fake_service.undo_merge_calls) == 1
+    assert fake_service.undo_merge_calls[0] == "merge123"
 
 
-def test_list_merges_parses_limit(monkeypatch):
+def test_list_merges_parses_limit():
+    """Test list-merges parses limit argument correctly."""
     fake_service = FakeService()
-    fake_service.merges_result = [
-        {
-            "merge_id": "m1",
-            "target_index": 1,
-            "target_item_id": "id1",
-            "source_indices": [2],
-            "source_item_ids": ["id2"],
-            "can_undo": True,
-            "reason": "test",
-            "performed_at": "2026-01-01 10:00:00",
-        }
-    ]
+    merge_commands.list_merges(fake_service, ["50"])
 
-    monkeypatch.setattr(cli_main, "get_service", lambda: fake_service)
-    monkeypatch.setattr(cli_main.sys, "argv", ["main.py", "list-merges", "5"])
-
-    cli_main.main()
-
-    assert fake_service.list_merges_calls == [5]
+    assert len(fake_service.list_merges_calls) == 1
+    assert fake_service.list_merges_calls[0] == 50

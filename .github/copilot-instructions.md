@@ -28,17 +28,36 @@
 
 ## Architecture
 
-- `app/main.py` is the runnable entrypoint and routes all CLI actions through `ItemService`.
+- `app/main.py` is the thin runnable entrypoint: parses sys.argv into structured arguments, loads settings, creates service, and delegates to CLI layer.
+- `cli/` package handles all CLI concerns (no direct sys.argv access in command handlers):
+  - `cli/parser.py` parses sys.argv into structured CommandArgs with command name and remaining arguments
+  - `cli/formatters.py` provides output formatting functions (print_item, print_relation, etc.)
+  - `cli/utils.py` provides utilities like parse_int for argument parsing and validation
+  - `cli/commands/` subpackage contains command handlers that receive parsed args as parameters:
+    - `cli/commands/__init__.py` handles item management (list/clear/add-by-type)
+    - `cli/commands/capture_commands.py` handles text capture and audio dictation
+    - `cli/commands/relation_commands.py` handles relations and dependency linking
+    - `cli/commands/merge_commands.py` handles item merging and merge history
+  - `cli/dispatcher.py` routes commands to appropriate handlers with parsed arguments
 - `config/settings.py` centralizes environment loading via `pydantic-settings` (single source for `ADHD_STORAGE_BACKEND`, `ADHD_NOTES_PATH`, `DATABASE_URL`, `ADHD_DICTATE_LANGUAGE`).
-- `services/item_service.py` contains the CLI-facing behavior (add/list/clear/capture) and keeps backward-compatible list formatting semantics.
-- `services/speech_to_text_service.py` handles speech-to-text for the `dictate` CLI command.
-- `services/item_type_classifier.py` auto-classifies captured text into `task`, `note`, or `idea`.
-- `services/relation_analysis_service.py` suggests duplicate/related links and builds similarity clusters.
-- `interfaces/storage.py` defines the storage contract; `ItemService` works through this interface and does not branch on JSON/PostgreSQL internals.
+- `core/exceptions.py` defines domain exception hierarchy for typed error handling.
+- `interfaces/storage.py` defines the storage contract; service layer works through this interface and does not branch on JSON/PostgreSQL internals.
+- `services/` layer is organized around use cases (not technical concerns):
+  - `services/capture_service.py` – Item creation and auto-classification
+  - `services/list_service.py` – Item listing and filtering
+  - `services/relation_service.py` – Relations, suggestions, and clustering
+  - `services/merge_service.py` – Item merging and merge history
+  - `services/item_service_registry.py` – Facade combining all specialized services
+  - `services/item_service.py` – Legacy wrapper (backwards compatible, now delegates to registry)
+  - `services/shared_item_utils.py` – Shared utilities for item operations
+  - `services/speech_to_text_service.py` – Speech-to-text for `dictate` command
+  - `services/item_type_classifier.py` – Auto-classification into task/note/idea
+  - `services/relation_analysis_service.py` – Similarity analysis and clustering
+- All services receive `Storage` as constructor parameter (no sys.argv, fully testable).
 - `storage/json_storage.py` is the default storage backend using `data/notes.json`.
 - `storage/postgres_storage.py` is the PostgreSQL backend (`ADHD_STORAGE_BACKEND=postgres`, `DATABASE_URL` required).
 - `migrations/0001_init_postgres.sql` is the canonical PostgreSQL schema; `migrations/0002_drop_schema.sql` is full rollback.
-- `scripts/migrate_json_to_postgres.py` performs phased import with source-tagged rollback.
+- `scripts/migrate_json_to_postgres.py` performs phased import with source-tagged rollback (no sys.argv).
 
 ## Repository Conventions
 
