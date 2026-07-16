@@ -1,12 +1,12 @@
 """Item merging and merge history commands."""
 
-from services.item_service import ItemService
+from services.item_service_registry import ItemServiceRegistry
 from cli.formatters import print_merge_entry
 from cli.utils import parse_int
 from core.exceptions import CliInputError
 
 
-def merge_items(service: ItemService, args: list[str]) -> None:
+def merge_items(service: ItemServiceRegistry, args: list[str]) -> None:
     """Merge multiple source items into a target item."""
     if len(args) < 2:
         raise CliInputError(
@@ -28,7 +28,7 @@ def merge_items(service: ItemService, args: list[str]) -> None:
     print(f"Merged items {', '.join(str(index) for index in source_indices)} into {target_index}.")
 
 
-def list_merges(service: ItemService, args: list[str]) -> None:
+def list_merges(service: ItemServiceRegistry, args: list[str]) -> None:
     """List recent merge operations with optional limit."""
     limit = parse_int(args[0], "limit") if args else 20
     merges = service.list_merges(limit=limit)
@@ -39,7 +39,7 @@ def list_merges(service: ItemService, args: list[str]) -> None:
         print_merge_entry(entry)
 
 
-def undo_merge(service: ItemService, args: list[str]) -> None:
+def undo_merge(service: ItemServiceRegistry, args: list[str]) -> None:
     """Undo the most recent merge operation."""
     merge_id = args[0].strip() if args else None
     result = service.undo_merge(merge_id=merge_id)

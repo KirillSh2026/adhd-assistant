@@ -2,14 +2,14 @@
 
 from datetime import datetime
 
-from services.item_service import ItemService
+from services.item_service_registry import ItemServiceRegistry
 from services.speech_to_text_service import SpeechToTextService
 from services.item_type_classifier import SUPPORTED_ITEM_TYPES
 from config.settings import get_settings
 from core.exceptions import CliInputError
 
 
-def add_from_text_capture(service: ItemService, args: list[str]) -> None:
+def add_from_text_capture(service: ItemServiceRegistry, args: list[str]) -> None:
     """Add item from captured text with automatic type detection."""
     text = " ".join(args).strip()
     if not text:
@@ -19,7 +19,7 @@ def add_from_text_capture(service: ItemService, args: list[str]) -> None:
     print(f"Added captured item: [{resolved_type}] {text}")
 
 
-def add_from_dictation(service: ItemService, args: list[str]) -> None:
+def add_from_dictation(service: ItemServiceRegistry, args: list[str]) -> None:
     """Add item from audio dictation (microphone or file) with optional explicit type."""
     note_type = None
     audio_path = ""

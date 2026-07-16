@@ -2,14 +2,14 @@
 
 from datetime import datetime
 
-from services.item_service import ItemService
+from services.item_service_registry import ItemServiceRegistry
 from cli.formatters import print_item
 from cli.utils import parse_int
 from core.exceptions import CliInputError
 from services.item_type_classifier import SUPPORTED_ITEM_TYPES
 
 
-def list_items(service: ItemService, args: list[str]) -> None:
+def list_items(service: ItemServiceRegistry, args: list[str]) -> None:
     """List items, optionally filtering by type."""
     filter_type = args[0].lower() if args else "all"
     
@@ -20,12 +20,12 @@ def list_items(service: ItemService, args: list[str]) -> None:
         print_item(index=index, item=item)
 
 
-def clear_items(service: ItemService, args: list[str]) -> None:
+def clear_items(service: ItemServiceRegistry, args: list[str]) -> None:
     """Clear all stored items."""
     service.clear_items()
 
 
-def add_item_by_type(service: ItemService, note_type: str, args: list[str]) -> None:
+def add_item_by_type(service: ItemServiceRegistry, note_type: str, args: list[str]) -> None:
     """Add item with explicit type."""
     text = " ".join(args).strip()
     if not text:

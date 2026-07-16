@@ -1,19 +1,19 @@
 """Telegram bot handler for ADHD Assistant.
 
 This module handles Telegram updates and routes them to appropriate services.
-It follows the same pattern as the CLI layer: parse input → call services → format output.
+It follows the same pattern as the CLI layer: parse input \u2192 call services \u2192 format output.
 
 Architecture:
     Telegram Update
-      ↓ (parsed by TelegramHandler)
+      \u2193 (parsed by TelegramHandler)
     Use Case Services (CaptureService, ListService, RelationService, MergeService)
-      ↓ (business logic)
+      \u2193 (business logic)
     Domain Models (Item, Relation, etc.)
-      ↓ (storage via Storage interface)
+      \u2193 (storage via Storage interface)
     JSON or PostgreSQL Backend
-      ↓ (persistence)
+      \u2193 (persistence)
     TelegramFormatter
-      ↓ (Telegram-specific formatting)
+      \u2193 (Telegram-specific formatting)
     Telegram Message
 
 Key design:
@@ -21,6 +21,7 @@ Key design:
 - Handler ONLY imports Storage interface and services
 - All business logic delegated to services
 - Handler focuses on: parsing, routing, formatting
+- Storage is injected via constructor (Dependency Injection pattern)
 """
 
 from __future__ import annotations
@@ -30,14 +31,13 @@ from datetime import datetime
 from typing import Optional
 
 from models.item import Item, ItemType, ItemStatus
-from config.settings import get_settings
 from core.exceptions import (
     StorageError,
     StorageEntityNotFoundError,
     CliInputError,
 )
-from services.item_service_registry import ItemServiceRegistry
 from interfaces.storage import Storage
+from services.item_service_registry import ItemServiceRegistry
 from telegram_bot.telegram_formatter import TelegramFormatter
 
 logger = logging.getLogger(__name__)
@@ -54,40 +54,24 @@ class TelegramHandler:
 
     Never touches JsonStorage or PostgresStorage directly.
     All operations go through Storage interface via services.
+    Storage is injected via constructor for proper dependency management.
+
+    Args:
+        storage: Storage backend instance (JSON or PostgreSQL)
+        project_name: Project name for item grouping (default: "Inbox")
     """
 
-    def __init__(self, project_name: str = "Inbox"):
-        """Initialize Telegram handler.
+    def __init__(self, storage: Storage, project_name: str = "Inbox"):
+        """Initialize Telegram handler with injected storage.
 
         Args:
+            storage: Storage backend instance (must implement Storage interface)
             project_name: Project name for item grouping (default: "Inbox")
         """
         self.project_name = project_name
-        self.storage = self._init_storage()
+        self.storage = storage
         self.services = ItemServiceRegistry(self.storage)
         self.formatter = TelegramFormatter()
-
-    def _init_storage(self) -> Storage:
-        """Initialize storage backend based on settings.
-
-        Returns JSON or PostgreSQL storage depending on configuration.
-        Handler doesn't care which one — it only knows the Storage interface.
-        
-        Uses lazy imports to avoid hard dependency on PostgreSQL driver.
-        """
-        settings = get_settings()
-
-        if settings.storage_backend == "postgres":
-            # Lazy import to avoid hard dependency
-            from storage.postgres_storage import PostgresStorage
-            return PostgresStorage(
-                dsn=settings.database_url,
-                project_name=self.project_name,
-            )
-        else:
-            # JSON storage is default
-            from storage.json_storage import JsonStorage
-            return JsonStorage(settings.notes_path)
 
     # ========================================================================
     # COMMAND HANDLERS
@@ -115,7 +99,7 @@ class TelegramHandler:
             item = Item(id="", type=ItemType.TASK, text=text)
 
             return self.formatter.success(
-                f"✅ Task created: {item.text}",
+                f"\u2705 Task created: {item.text}",
                 item=item,
             )
 
@@ -145,7 +129,7 @@ class TelegramHandler:
             item = Item(id="", type=ItemType.NOTE, text=text)
 
             return self.formatter.success(
-                f"📝 Note created: {item.text}",
+                f"\ud83d\udcdd Note created: {item.text}",
                 item=item,
             )
 
@@ -175,7 +159,7 @@ class TelegramHandler:
             item = Item(id="", type=ItemType.IDEA, text=text)
 
             return self.formatter.success(
-                f"💡 Idea created: {item.text}",
+                f"\ud83d\udca1 Idea created: {item.text}",
                 item=item,
             )
 
@@ -202,10 +186,10 @@ class TelegramHandler:
             )
 
             type_icon = {
-                "task": "✅",
-                "note": "📝",
-                "idea": "💡",
-            }.get(item_type, "📌")
+                "task": "\u2705",
+                "note": "\ud83d\udcdd",
+                "idea": "\ud83d\udca1",
+            }.get(item_type, "\ud83d\udccc")
 
             item = Item(id="", type=ItemType(item_type), text=text)
 
@@ -250,7 +234,7 @@ class TelegramHandler:
         """
         try:
             self.services.capture.clear_items()
-            return self.formatter.success("🗑️ All items cleared")
+            return self.formatter.success("\ud83d\uddd1\ufe0f All items cleared")
 
         except StorageError as e:
             logger.exception("Error clearing items")
