@@ -1,27 +1,39 @@
 """PostgreSQL storage implementation using repository pattern.
 
-This is a refactored version of the monolithic PostgresStorage class.
+This is the refactored version of PostgreSQL storage after Phase 5.
 It now uses:
 - UnitOfWork for transaction management
 - 4 repositories for data access
-- Domain rules for business logic
+- MergeOrchestrator for merge coordination
+- UndoService for rollback operations
+- Domain rules for business logic validation
 - SnapshotService for merge safety
 
 The public interface remains 100% compatible with the original version.
 All existing code continues to work without changes.
 
+IMPORTANT: This is NOT a storage backend in the traditional sense anymore.
+It's a thin facade over orchestration services + repositories + UnitOfWork.
+Business logic lives in services and domain rules, not here.
+
 Architecture:
-    PostgresStorage (orchestrator)
+    PostgresStorage (orchestrator facade)
       ↓
-    UnitOfWork (connection + transaction management)
+    UnitOfWork (transaction + connection management)
       ↓
-    Repositories (data access)
+    Repositories (data access layer)
       ├─ ProjectRepository
       ├─ ItemRepository
       ├─ RelationRepository
       └─ MergeRepository
       ↓
-    Domain Rules + SnapshotService (business logic)
+    Orchestration Services (business workflows)
+      ├─ MergeOrchestrator (merge_items flow)
+      └─ UndoService (undo_last_merge flow)
+      
+    Domain Services (reusable logic)
+      ├─ Domain Rules (business validation)
+      └─ SnapshotService (merge snapshots)
 """
 
 from __future__ import annotations
@@ -30,18 +42,39 @@ from datetime import datetime
 
 from core.exceptions import StorageEntityNotFoundError, StorageError
 from models.item import Item, ItemStatus, ItemType
-from models.item_adapter import ItemAdapter
 from storage.postgres.config import PostgresConfig
 from storage.postgres.unit_of_work import UnitOfWork
 from storage.postgres.domain_rules import MergeRules, RelationRules, ItemRules
 from storage.postgres.snapshot_service import SnapshotService
+from storage.postgres.merge_orchestrator import MergeOrchestrator
+from storage.postgres.undo_service import UndoService
 
 
 class PostgresStorage:
-    """PostgreSQL storage backend with repository pattern.
+    """PostgreSQL storage backend with thin orchestration layer.
 
-    Implements Storage interface while delegating to repositories.
-    All connection management is handled by UnitOfWork.
+    This class implements the Storage interface but delegates nearly all
+    operations to orchestration services and repositories.
+    
+    Key invariants:
+    1. All data access goes through UnitOfWork
+    2. All business logic goes through services (Orchestrators, DomainRules)
+    3. All database transactions are scoped to UnitOfWork context manager
+    4. No stored procedures or complex SQL in this class
+    
+    Public API (all operations):
+    - load_items() → list[Item]
+    - load_items_for_relations(include_archived=False) → list[Item]
+    - add_item(item: Item) → None
+    - clear_items() → None
+    - save_relation_suggestions(suggestions: list[dict]) → int
+    - upsert_relation(from_item_id, to_item_id, relationship_type, reason, is_confirmed) → None
+    - confirm_relation(from_item_id, to_item_id, relationship_type) → None
+    - reject_relation(from_item_id, to_item_id, relationship_type) → None
+    - list_relations(item_id: str | None = None) → list[dict]
+    - merge_items(target_item_id, source_item_ids, merge_reason) → None
+    - list_merges(limit=20) → list[dict]
+    - undo_last_merge(merge_id: str | None = None) → dict
     """
 
     def __init__(self, dsn: str, project_name: str = "Inbox"):
@@ -54,14 +87,14 @@ class PostgresStorage:
         self.config = PostgresConfig(dsn=dsn, project_name=project_name)
 
     # ========================================================================
-    # ITEM OPERATIONS
+    # ITEM OPERATIONS (READ)
     # ========================================================================
 
     def load_items(self) -> list[Item]:
         """Load all active items from storage.
 
         Returns:
-            List of Item objects
+            List of Item objects (excluding archived)
 
         Raises:
             StorageError: If database operation fails
@@ -116,120 +149,129 @@ class PostgresStorage:
                 for record in item_records
             ]
 
+    # ========================================================================
+    # ITEM OPERATIONS (WRITE)
+    # ========================================================================
+
     def add_item(self, item: Item) -> None:
-        """Add new item to storage.
+        """Add a new item to storage.
 
         Args:
-            item: Item to add
+            item: Item to add (must have non-empty text, valid type/status)
 
         Raises:
             StorageError: If add fails
+            ValueError: If item validation fails
         """
         with UnitOfWork(self.config) as uow:
             project_id = uow.ensure_project_id(self.config.project_name)
-
-            created_at = item.created_at or datetime.now()
-
+            
+            # Validate item before storage
+            ItemRules.validate_item_type(item.type)
+            ItemRules.validate_item_status(item.status)
+            
+            # Insert through repository
             uow.items.insert(
                 uow.connection,
                 project_id=project_id,
-                type_=str(item.type),
+                item_type=item.type.value,
                 text=item.text,
-                status=str(item.status),
-                source="cli",
-                created_at=created_at,
+                created_at=item.created_at,
+                status=item.status.value,
             )
 
     def clear_items(self) -> None:
-        """Clear all items from storage.
+        """Clear all items from storage for this project.
 
         Raises:
             StorageError: If clear fails
         """
         with UnitOfWork(self.config) as uow:
             project_id = uow.ensure_project_id(self.config.project_name)
-            uow.items.clear_project(uow.connection, project_id)
+            uow.items.delete_all_by_project(uow.connection, project_id)
 
     # ========================================================================
-    # RELATION OPERATIONS
+    # RELATION OPERATIONS (SUGGESTIONS & BATCH)
     # ========================================================================
 
     def save_relation_suggestions(self, suggestions: list[dict]) -> int:
         """Save batch of relation suggestions (unconfirmed).
 
         Args:
-            suggestions: List of dicts with from_item_id, to_item_id, relationship_type, reason
+            suggestions: List of suggestion dicts with keys:
+                - from_item_id: str (source item)
+                - to_item_id: str (target item)
+                - relationship_type: str (type of relation)
+                - reason: str (optional, why suggested)
 
         Returns:
             Number of suggestions saved
 
         Raises:
             StorageError: If save fails
+            ValueError: If suggestion violates business rules
         """
-        if not suggestions:
-            return 0
-
         with UnitOfWork(self.config) as uow:
             project_id = uow.ensure_project_id(self.config.project_name)
-
+            
             count = 0
             for suggestion in suggestions:
-                from_id = str(suggestion["from_item_id"])
-                to_id = str(suggestion["to_item_id"])
-
-                # Validate items exist
-                uow.items._assert_item_exists(uow.connection, from_id, project_id)
-                uow.items._assert_item_exists(uow.connection, to_id, project_id)
-
-                # Validate business rules
-                RelationRules.validate_different_items(from_id, to_id)
+                # Validate
+                RelationRules.validate_different_items(
+                    suggestion["from_item_id"],
+                    suggestion["to_item_id"],
+                )
                 RelationRules.validate_relationship_type(suggestion["relationship_type"])
-
-                # Insert suggestion
+                
+                # Save as unconfirmed suggestion
                 uow.relations.insert_suggestion(
                     uow.connection,
-                    from_item_id=from_id,
-                    to_item_id=to_id,
+                    project_id=project_id,
+                    from_item_id=suggestion["from_item_id"],
+                    to_item_id=suggestion["to_item_id"],
                     relationship_type=suggestion["relationship_type"],
-                    reason=suggestion.get("reason"),
+                    reason=suggestion.get("reason", ""),
                 )
                 count += 1
-
+            
             return count
+
+    # ========================================================================
+    # RELATION OPERATIONS (CONFIRMED RELATIONS)
+    # ========================================================================
 
     def upsert_relation(
         self,
         from_item_id: str,
         to_item_id: str,
         relationship_type: str,
-        reason: str,
-        is_confirmed: bool,
+        reason: str = "",
+        is_confirmed: bool = False,
     ) -> None:
-        """Insert or update a relation.
+        """Create or update a confirmed relation between items.
 
         Args:
             from_item_id: Source item ID
             to_item_id: Target item ID
-            relationship_type: Type of relationship
-            reason: Reason/description
-            is_confirmed: Whether relation is confirmed
+            relationship_type: Type of relation (depends_on, related_to, duplicate_of, etc.)
+            reason: Optional description of the relation
+            is_confirmed: Whether this is a user-confirmed relation (default: False)
 
         Raises:
             StorageError: If operation fails
+            ValueError: If items are same or type is invalid
         """
         with UnitOfWork(self.config) as uow:
             project_id = uow.ensure_project_id(self.config.project_name)
-
-            # Validate items exist
-            uow.items._assert_item_exists(uow.connection, from_item_id, project_id)
-            uow.items._assert_item_exists(uow.connection, to_item_id, project_id)
-
-            # Validate business rules
+            
+            # Validate before storage
             RelationRules.validate_different_items(from_item_id, to_item_id)
             RelationRules.validate_relationship_type(relationship_type)
-
+            
+            # Create or update relation
             uow.relations.upsert_relation(
                 uow.connection,
+                project_id=project_id,
                 from_item_id=from_item_id,
                 to_item_id=to_item_id,
                 relationship_type=relationship_type,
@@ -243,26 +285,23 @@ class PostgresStorage:
         to_item_id: str,
         relationship_type: str,
     ) -> None:
-        """Confirm a relation suggestion.
+        """Mark a relation as confirmed by user.
 
         Args:
             from_item_id: Source item ID
             to_item_id: Target item ID
-            relationship_type: Type of relationship
+            relationship_type: Relation type
 
         Raises:
             StorageEntityNotFoundError: If relation not found
-            StorageError: If operation fails
+            StorageError: If update fails
         """
         with UnitOfWork(self.config) as uow:
             project_id = uow.ensure_project_id(self.config.project_name)
-
-            # Validate items exist (they should be in DB)
-            uow.items._assert_item_exists(uow.connection, from_item_id, project_id)
-            uow.items._assert_item_exists(uow.connection, to_item_id, project_id)
-
-            uow.relations.confirm(
+            
+            uow.relations.confirm_relation(
                 uow.connection,
+                project_id=project_id,
                 from_item_id=from_item_id,
                 to_item_id=to_item_id,
                 relationship_type=relationship_type,
@@ -274,65 +313,69 @@ class PostgresStorage:
         to_item_id: str,
         relationship_type: str,
     ) -> None:
-        """Reject a relation suggestion (delete it).
+        """Remove an unconfirmed relation suggestion.
 
         Args:
             from_item_id: Source item ID
             to_item_id: Target item ID
-            relationship_type: Type of relationship
+            relationship_type: Relation type
 
         Raises:
-            StorageEntityNotFoundError: If suggestion not found
-            StorageError: If operation fails
+            StorageEntityNotFoundError: If relation not found
+            StorageError: If delete fails
         """
         with UnitOfWork(self.config) as uow:
             project_id = uow.ensure_project_id(self.config.project_name)
-
-            # Validate items exist
-            uow.items._assert_item_exists(uow.connection, from_item_id, project_id)
-            uow.items._assert_item_exists(uow.connection, to_item_id, project_id)
-
-            uow.relations.reject_suggestion(
+            
+            uow.relations.reject_relation(
                 uow.connection,
+                project_id=project_id,
                 from_item_id=from_item_id,
                 to_item_id=to_item_id,
                 relationship_type=relationship_type,
             )
 
     def list_relations(self, item_id: str | None = None) -> list[dict]:
-        """List relations (optionally filtered by item).
+        """List confirmed relations in this project.
 
         Args:
-            item_id: If provided, only return relations involving this item
+            item_id: Optional item ID to filter relations for (default: all)
 
         Returns:
-            List of relation dicts with from_item_id, to_item_id, relationship_type, etc.
+            List of relation dicts:
+            {
+                "from_item_id": str,
+                "to_item_id": str,
+                "relationship_type": str,
+                "is_confirmed": bool,
+                "reason": str,
+            }
 
         Raises:
-            StorageError: If operation fails
+            StorageError: If query fails
         """
         with UnitOfWork(self.config) as uow:
-            if item_id:
-                relation_records = uow.relations.list_for_item(uow.connection, item_id)
-            else:
-                relation_records = uow.relations.list_all(uow.connection)
-
+            project_id = uow.ensure_project_id(self.config.project_name)
+            
+            relations = uow.relations.find_for_project(
+                uow.connection,
+                project_id,
+                item_id=item_id,
+            )
+            
             return [
                 {
-                    "id": record.id,
-                    "from_item_id": record.from_item_id,
-                    "to_item_id": record.to_item_id,
-                    "relationship_type": record.relationship_type,
-                    "reason": record.reason,
-                    "is_confirmed": record.is_confirmed,
-                    "confirmed_at": record.confirmed_at,
-                    "created_at": record.created_at,
+                    "from_item_id": r.from_item_id,
+                    "to_item_id": r.to_item_id,
+                    "relationship_type": r.relationship_type,
+                    "is_confirmed": r.is_confirmed,
+                    "reason": r.reason,
                 }
-                for record in relation_records
+                for r in relations
             ]
 
     # ========================================================================
-    # MERGE OPERATIONS
+    # MERGE OPERATIONS (ORCHESTRATED)
     # ========================================================================
 
     def merge_items(
@@ -341,143 +384,113 @@ class PostgresStorage:
         source_item_ids: list[str],
         merge_reason: str,
     ) -> None:
-        """Merge source items into target item.
+        """Merge source items into target item (DESTRUCTIVE).
+
+        Workflow (orchestrated by MergeOrchestrator):
+        1. Load target and source items
+        2. Validate merge is allowed (status checks, etc.)
+        3. Capture snapshot for rollback support
+        4. Delete source items from storage
+        5. Record merge operation with snapshot
 
         Args:
-            target_item_id: Target item ID (items merged into this)
-            source_item_ids: List of source item IDs (merged from these)
-            merge_reason: Reason for merge
+            target_item_id: Item to merge into (preserved)
+            source_item_ids: Items to merge from (deleted)
+            merge_reason: Reason for merge (audit trail, user reference)
 
         Raises:
-            StorageError: If merge fails or violates business rules
-        """
-        with UnitOfWork(self.config) as uow:
-            project_id = uow.ensure_project_id(self.config.project_name)
-
-            # Load all items involved
-            target_record = uow.items.find_by_project(uow.connection, project_id)
-            target = next((r for r in target_record if r.id == target_item_id), None)
-
-            if not target:
-                raise StorageEntityNotFoundError(f"Target item {target_item_id!r} not found")
-
-            source_items = [
-                r for r in target_record if r.id in source_item_ids
-            ]
-
-            if len(source_items) != len(source_item_ids):
-                missing = set(source_item_ids) - {r.id for r in source_items}
-                raise StorageEntityNotFoundError(
-                    f"Source items not found: {missing}"
-                )
-
-            # Validate business rules
-            for source in source_items:
-                MergeRules.validate_can_merge(source.status, target.status)
-
-            # Capture snapshot BEFORE merging
-            snapshot_data = SnapshotService.create_snapshot(
-                source_item={
-                    "id": source_items[0].id,
-                    "type": source_items[0].type,
-                    "text": source_items[0].text,
-                    "status": source_items[0].status,
-                },
-                target_item={
-                    "id": target.id,
-                    "type": target.type,
-                    "text": target.text,
-                    "status": target.status,
-                },
-            )
-
-            # Merge logic: delete source items, keep target
-            for source in source_items:
-                uow.items.delete(uow.connection, source.id)
-
-            # Record merge
-            uow.merges.record_merge(
-                uow.connection,
-                project_id=project_id,
-                source_item_id=source_items[0].id,
-                target_item_id=target_item_id,
-                merge_reason=merge_reason,
-                snapshot_data=snapshot_data,
-            )
-
-    def list_merges(self, limit: int = 20) -> list[dict]:
-        """List merge history.
-
-        Args:
-            limit: Maximum records to return
-
-        Returns:
-            List of merge dicts
-
-        Raises:
+            StorageEntityNotFoundError: If target or source not found
+            ValueError: If merge violates business rules
             StorageError: If operation fails
         """
         with UnitOfWork(self.config) as uow:
             project_id = uow.ensure_project_id(self.config.project_name)
-            merge_records = uow.merges.list_for_project(
-                uow.connection,
-                project_id,
-                include_reverted=False,
-                limit=limit,
+            
+            # Delegate to MergeOrchestrator for full workflow
+            MergeOrchestrator.execute_merge(
+                uow,
+                project_id=project_id,
+                target_item_id=target_item_id,
+                source_item_ids=source_item_ids,
+                merge_reason=merge_reason,
             )
 
-            return [
-                {
-                    "id": record.id,
-                    "source_item_id": record.source_item_id,
-                    "target_item_id": record.target_item_id,
-                    "merge_reason": record.merge_reason,
-                    "merged_by": record.merged_by,
-                    "created_at": record.created_at,
-                    "snapshot_data": record.snapshot_data,
-                }
-                for record in merge_records
-            ]
-
-    def undo_last_merge(self, merge_id: str | None = None) -> dict:
-        """Undo a merge operation (rollback from snapshot).
+    def list_merges(self, limit: int = 20) -> list[dict]:
+        """List merge operations (audit trail).
 
         Args:
-            merge_id: Specific merge to undo (default: undo latest)
+            limit: Maximum merges to return (default: 20)
 
         Returns:
-            Dict with undo results and instructions
+            List of merge records:
+            {
+                "id": str,
+                "source_item_id": str,
+                "target_item_id": str,
+                "merge_reason": str,
+                "created_at": str (ISO format) | None,
+                "reverted_at": str (ISO format) | None,
+            }
 
         Raises:
-            StorageError: If undo fails or merge cannot be reverted
+            StorageError: If query fails
         """
         with UnitOfWork(self.config) as uow:
             project_id = uow.ensure_project_id(self.config.project_name)
+            
+            merges = uow.merges.find_for_project(
+                uow.connection,
+                project_id,
+                limit=limit,
+            )
+            
+            return [
+                {
+                    "id": m.id,
+                    "source_item_id": m.source_item_id,
+                    "target_item_id": m.target_item_id,
+                    "merge_reason": m.merge_reason,
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                    "reverted_at": m.reverted_at.isoformat() if m.reverted_at else None,
+                }
+                for m in merges
+            ]
 
-            # Find merge to undo
-            if merge_id:
-                merge = uow.merges.find_by_id(uow.connection, merge_id)
-                if not merge:
-                    raise StorageEntityNotFoundError(f"Merge {merge_id!r} not found")
-            else:
-                merge = uow.merges.find_latest_for_project(uow.connection, project_id)
-                if not merge:
-                    raise StorageEntityNotFoundError("No merges to undo")
+    def undo_last_merge(self, merge_id: str | None = None) -> dict:
+        """Undo a merge operation (mark as reverted, provide rollback info).
 
-            # Validate merge can be undone
-            MergeRules.validate_can_undo_merge(merge.status, merge.reverted_at is not None)
+        Workflow (orchestrated by UndoService):
+        1. Find merge to undo (by ID or latest)
+        2. Validate undo is allowed (not already reverted)
+        3. Validate snapshot is complete
+        4. Mark merge as reverted
+        5. Return rollback instructions
 
-            # Validate snapshot
-            SnapshotService.validate_snapshot(merge.snapshot_data)
+        Args:
+            merge_id: Specific merge to undo (None = undo latest)
 
-            # Mark merge as reverted
-            uow.merges.mark_reverted(uow.connection, merge.id)
-
-            return {
-                "merge_id": merge.id,
-                "source_item_id": merge.source_item_id,
-                "target_item_id": merge.target_item_id,
-                "reverted_at": datetime.now().isoformat(),
-                "snapshot": merge.snapshot_data,
-                "instructions": SnapshotService.get_rollback_instructions(merge.snapshot_data),
+        Returns:
+            Dict with undo results:
+            {
+                "merge_id": str,
+                "source_item_id": str,
+                "target_item_id": str,
+                "reverted_at": str (ISO format),
+                "snapshot": dict (original item data),
+                "instructions": dict (rollback steps),
             }
+
+        Raises:
+            StorageEntityNotFoundError: If merge not found or no merges exist
+            ValueError: If merge cannot be undone (already reverted, etc.)
+            StorageError: If operation fails
+        """
+        with UnitOfWork(self.config) as uow:
+            project_id = uow.ensure_project_id(self.config.project_name)
+            
+            # Delegate to UndoService for full workflow
+            return UndoService.undo_last_merge(
+                uow,
+                project_id=project_id,
+                merge_id=merge_id,
+            )

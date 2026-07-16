@@ -11,14 +11,18 @@ class ListService:
         self.storage = storage
 
     def list_items(self, list_type: str) -> list[tuple[int, Item]]:
-        """List items, optionally filtered by type."""
-        items = [item for item in self.storage.load_items() if item.has_text()]
+        """List items, optionally filtered by type.
+        
+        Note: Items are already validated to have non-empty text in __post_init__,
+        so no need to filter by has_text().
+        """
+        items = self.storage.load_items()
 
         if list_type in {"task", "note", "idea"}:
             return [
                 (index, item)
                 for index, item in enumerate(items, start=1)
-                if item.type.strip() == list_type
+                if item.type.value == list_type
             ]
 
         if list_type in {"all", ""}:

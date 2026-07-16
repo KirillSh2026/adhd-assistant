@@ -59,11 +59,12 @@ class RelationAnalysisService:
         scored_edges: set[tuple[str, str, str]] = set()
 
         for left_index, left_item in enumerate(items):
-            if not left_item.id or not left_item.has_text():
+            # Items validated to have non-empty text in Item.__post_init__
+            if not left_item.id:
                 continue
 
             for right_item in items[left_index + 1 :]:
-                if not right_item.id or not right_item.has_text():
+                if not right_item.id:
                     continue
 
                 similarity = self._similarity(left_item.text, right_item.text)
