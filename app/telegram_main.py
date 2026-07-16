@@ -41,6 +41,9 @@ except ImportError:
     sys.exit(1)
 
 from config.settings import get_settings
+from core.exceptions import ConfigurationError, StorageError
+from interfaces.storage import Storage
+from storage.json_storage import JsonStorage
 from telegram_bot.telegram_handler import TelegramHandler
 
 # Setup logging
@@ -51,21 +54,50 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def get_storage() -> Storage:
+    """Initialize and return the configured storage backend.
+    
+    Raises:
+        ConfigurationError: If backend configuration is invalid
+        StorageError: If storage initialization fails
+    """
+    settings = get_settings()
+    backend = settings.adhd_storage_backend
+    notes_path = settings.adhd_notes_path
+    database_url = settings.database_url.strip()
+
+    if backend == "postgres":
+        if not database_url:
+            raise ConfigurationError("DATABASE_URL is required when ADHD_STORAGE_BACKEND=postgres")
+        from storage.postgres_storage import PostgresStorage
+        return PostgresStorage(dsn=database_url)
+    else:
+        try:
+            return JsonStorage(path=notes_path)
+        except Exception as e:
+            raise StorageError(
+                f"Failed to initialize JSON storage at {notes_path}: {e}\n"
+                f"Make sure the directory is writable and valid."
+            ) from e
+
+
 class TelegramBotApp:
     """Telegram bot application wrapper.
 
     Manages bot lifecycle and message routing.
     """
 
-    def __init__(self, token: str, project_name: str = "Inbox"):
+    def __init__(self, token: str, storage: Storage, project_name: str = "Inbox"):
         """Initialize bot application.
 
         Args:
             token: Telegram bot token
+            storage: Storage backend instance
             project_name: Project name for item grouping
         """
         self.token = token
-        self.handler = TelegramHandler(project_name)
+        self.storage = storage
+        self.handler = TelegramHandler(storage, project_name)
         self.app = None
 
     async def start_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -212,8 +244,11 @@ async def main() -> None:
         )
         sys.exit(1)
 
-    # Create bot app
-    bot_app = TelegramBotApp(token)
+    # Initialize storage
+    storage = get_storage()
+
+    # Create bot app with injected storage
+    bot_app = TelegramBotApp(token, storage)
 
     # Run with polling (development) or webhook (production)
     webhook_url = os.environ.get("ADHD_TELEGRAM_WEBHOOK_URL")

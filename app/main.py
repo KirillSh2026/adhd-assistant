@@ -10,6 +10,7 @@ It handles:
 
 from pathlib import Path
 import sys
+import warnings
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
@@ -17,14 +18,17 @@ if str(ROOT_DIR) not in sys.path:
 
 from config.settings import get_settings
 from core.exceptions import AppError, ConfigurationError, StorageError
-from services.item_service import ItemService
+from interfaces.storage import Storage
+from services.item_service_registry import ItemServiceRegistry
+from services.item_type_classifier import ItemTypeClassifier
+from services.relation_analysis_service import RelationAnalysisService
 from storage.json_storage import JsonStorage
 from cli.parser import parse_command_line
 from cli.dispatcher import dispatch_command
 
 
-def get_service() -> ItemService:
-    """Initialize and return the ItemService with configured storage backend.
+def get_storage() -> Storage:
+    """Initialize and return the configured storage backend.
     
     Raises:
         ConfigurationError: If backend configuration is invalid
@@ -40,16 +44,28 @@ def get_service() -> ItemService:
             raise ConfigurationError("DATABASE_URL is required when ADHD_STORAGE_BACKEND=postgres")
         from storage.postgres_storage import PostgresStorage
 
-        storage = PostgresStorage(dsn=database_url)
+        return PostgresStorage(dsn=database_url)
     else:
         try:
-            storage = JsonStorage(path=notes_path)
+            return JsonStorage(path=notes_path)
         except Exception as e:
             raise StorageError(
                 f"Failed to initialize JSON storage at {notes_path}: {e}\n"
                 f"Make sure the directory is writable and valid."
             ) from e
-    return ItemService(storage=storage)
+
+
+def get_service() -> ItemServiceRegistry:
+    """Initialize and return the ItemServiceRegistry with configured storage backend.
+    
+    Raises:
+        ConfigurationError: If backend configuration is invalid
+        StorageError: If storage initialization fails
+    """
+    storage = get_storage()
+    classifier = ItemTypeClassifier()
+    relation_analyzer = RelationAnalysisService()
+    return ItemServiceRegistry(storage, classifier, relation_analyzer)
 
 
 def main() -> None:

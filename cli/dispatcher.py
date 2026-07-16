@@ -1,6 +1,6 @@
 """CLI command dispatcher - routes commands to appropriate handlers."""
 
-from services.item_service import ItemService
+from services.item_service_registry import ItemServiceRegistry
 from services.item_type_classifier import SUPPORTED_ITEM_TYPES
 from core.exceptions import CliInputError, UnsupportedStorageCapabilityError
 
@@ -17,11 +17,11 @@ from cli.commands.relation_commands import (
 from cli.commands.merge_commands import merge_items, list_merges, undo_merge
 
 
-def dispatch_command(service: ItemService, command: str, args: list[str]) -> None:
+def dispatch_command(service: ItemServiceRegistry, command: str, args: list[str]) -> None:
     """Route CLI command to appropriate handler with parsed arguments.
     
     Args:
-        service: ItemService instance
+        service: ItemServiceRegistry instance
         command: Command name (already lowercased)
         args: Remaining positional arguments (already stripped)
         
@@ -72,7 +72,7 @@ def dispatch_command(service: ItemService, command: str, args: list[str]) -> Non
         error_msg = str(e)
         if "PostgreSQL" in error_msg or "postgres" in error_msg:
             raise CliInputError(
-                f"❌ This command requires PostgreSQL backend.\n\n"
+                f"\u274c This command requires PostgreSQL backend.\n\n"
                 f"Details:\n{error_msg}\n\n"
                 f"To enable PostgreSQL:\n"
                 f"  1. Set up PostgreSQL database\n"

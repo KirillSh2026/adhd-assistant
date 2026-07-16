@@ -4,15 +4,15 @@ import pytest
 
 from core.exceptions import UnsupportedStorageCapabilityError
 from models.item import Item, ItemType, ItemStatus
-from services.item_service import ItemService
+from services.item_service_registry import ItemServiceRegistry
 
 
 class FakeAdvancedStorage:
     def __init__(self):
         self.items = [
-            Item(id="1", type=ItemType.TASK, text="Купить молоко и хлеб", created_at=datetime(2026, 1, 1, 10, 0, 0)),
-            Item(id="2", type=ItemType.TASK, text="Купить молоко и хлеб вечером", created_at=datetime(2026, 1, 1, 10, 5, 0)),
-            Item(id="3", type=ItemType.NOTE, text="Сегодня было много отвлечений", created_at=datetime(2026, 1, 1, 10, 10, 0)),
+            Item(id="1", type=ItemType.TASK, text="\u041a\u0443\u043f\u0438\u0442\u044c \u043c\u043e\u043b\u043e\u043a\u043e \u0438 \u0445\u043b\u0435\u0431", created_at=datetime(2026, 1, 1, 10, 0, 0)),
+            Item(id="2", type=ItemType.TASK, text="\u041a\u0443\u043f\u0438\u0442\u044c \u043c\u043e\u043b\u043e\u043a\u043e \u0438 \u0445\u043b\u0435\u0431 \u0432\u0435\u0447\u0435\u0440\u043e\u043c", created_at=datetime(2026, 1, 1, 10, 5, 0)),
+            Item(id="3", type=ItemType.NOTE, text="\u0421\u0435\u0433\u043e\u0434\u043d\u044f \u0431\u044b\u043b\u043e \u043c\u043d\u043e\u0433\u043e \u043e\u0442\u0432\u043b\u0435\u0447\u0435\u043d\u0438\u0439", created_at=datetime(2026, 1, 1, 10, 10, 0)),
         ]
         self.saved_suggestions = []
         self.upsert_calls = []
@@ -88,7 +88,7 @@ class FakeAdvancedStorage:
 
 def test_suggest_relations_persists_suggestions():
     storage = FakeAdvancedStorage()
-    service = ItemService(storage)
+    service = ItemServiceRegistry(storage)
 
     suggestions = service.suggest_relations()
 
@@ -99,7 +99,7 @@ def test_suggest_relations_persists_suggestions():
 
 def test_show_clusters_groups_related_items():
     storage = FakeAdvancedStorage()
-    service = ItemService(storage)
+    service = ItemServiceRegistry(storage)
 
     clusters = service.show_clusters()
 
@@ -109,18 +109,18 @@ def test_show_clusters_groups_related_items():
 
 def test_link_items_maps_depends_on_to_blocked_by():
     storage = FakeAdvancedStorage()
-    service = ItemService(storage)
+    service = ItemServiceRegistry(storage)
 
-    service.link_items(1, 2, "depends_on", "Нужна база перед отчетом")
+    service.link_items(1, 2, "depends_on", "\u041d\u0443\u0436\u043d\u0430 \u0431\u0430\u0437\u0430 \u043f\u0435\u0440\u0435\u0434 \u043e\u0442\u0447\u0435\u0442\u043e\u043c")
 
     assert storage.upsert_calls == [
-        ("1", "2", "blocked_by", "Нужна база перед отчетом", True)
+        ("1", "2", "blocked_by", "\u041d\u0443\u0436\u043d\u0430 \u0431\u0430\u0437\u0430 \u043f\u0435\u0440\u0435\u0434 \u043e\u0442\u0447\u0435\u0442\u043e\u043c", True)
     ]
 
 
 def test_confirm_relation_uses_resolved_indexes():
     storage = FakeAdvancedStorage()
-    service = ItemService(storage)
+    service = ItemServiceRegistry(storage)
 
     service.confirm_relation(1, 2, "duplicate_of")
 
@@ -129,16 +129,16 @@ def test_confirm_relation_uses_resolved_indexes():
 
 def test_merge_items_passes_ids_and_reason():
     storage = FakeAdvancedStorage()
-    service = ItemService(storage)
+    service = ItemServiceRegistry(storage)
 
-    service.merge_items(1, [2], "Объединяем дубликаты")
+    service.merge_items(1, [2], "\u041e\u0431\u044a\u0435\u0434\u0438\u043d\u044f\u0435\u043c \u0434\u0443\u0431\u043b\u0438\u043a\u0430\u0442\u044b")
 
-    assert storage.merge_calls == [("1", ["2"], "Объединяем дубликаты")]
+    assert storage.merge_calls == [("1", ["2"], "\u041e\u0431\u044a\u0435\u0434\u0438\u043d\u044f\u0435\u043c \u0434\u0443\u0431\u043b\u0438\u043a\u0430\u0442\u044b")]
 
 
 def test_merge_items_rejects_duplicate_source_indexes():
     storage = FakeAdvancedStorage()
-    service = ItemService(storage)
+    service = ItemServiceRegistry(storage)
 
     with pytest.raises(ValueError):
         service.merge_items(1, [2, 2], "bad input")
@@ -146,7 +146,7 @@ def test_merge_items_rejects_duplicate_source_indexes():
 
 def test_reject_relation_uses_resolved_indexes():
     storage = FakeAdvancedStorage()
-    service = ItemService(storage)
+    service = ItemServiceRegistry(storage)
 
     service.reject_relation(1, 2, "duplicate_of")
 
@@ -155,7 +155,7 @@ def test_reject_relation_uses_resolved_indexes():
 
 def test_list_merges_formats_indexes():
     storage = FakeAdvancedStorage()
-    service = ItemService(storage)
+    service = ItemServiceRegistry(storage)
 
     merges = service.list_merges(limit=5)
 
@@ -166,7 +166,7 @@ def test_list_merges_formats_indexes():
 
 def test_undo_merge_returns_index_mapping():
     storage = FakeAdvancedStorage()
-    service = ItemService(storage)
+    service = ItemServiceRegistry(storage)
 
     result = service.undo_merge(merge_id="m1")
 
@@ -178,7 +178,7 @@ def test_undo_merge_returns_index_mapping():
 def test_json_storage_rejects_advanced_relation_commands(tmp_path):
     from storage.json_storage import JsonStorage
 
-    service = ItemService(JsonStorage(str(tmp_path / "notes.json")))
+    service = ItemServiceRegistry(JsonStorage(str(tmp_path / "notes.json")))
 
     with pytest.raises(UnsupportedStorageCapabilityError):
         service.suggest_relations()
@@ -190,8 +190,8 @@ def test_json_storage_rejects_advanced_relation_commands(tmp_path):
 def test_regular_add_item_still_works_with_classifier_changes(tmp_path):
     from storage.json_storage import JsonStorage
 
-    service = ItemService(JsonStorage(str(tmp_path / "notes.json")))
-    service.add_item("task", "Купить хлеб", datetime(2026, 1, 1, 12, 0, 0))
+    service = ItemServiceRegistry(JsonStorage(str(tmp_path / "notes.json")))
+    service.add_item("task", "\u041a\u0443\u043f\u0438\u0442\u044c \u0445\u043b\u0435\u0431", datetime(2026, 1, 1, 12, 0, 0))
 
     items = service.list_items("all")
     assert items[0][1].type == ItemType.TASK
