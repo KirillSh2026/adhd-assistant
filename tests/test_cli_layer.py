@@ -15,10 +15,10 @@ from core.exceptions import CliInputError
 
 class MockItem:
     """Mock item for formatter tests."""
-    def __init__(self, item_type: str, text: str, datetime_val=None):
+    def __init__(self, item_type: str, text: str, created_at=None):
         self.type = item_type
         self.text = text
-        self.datetime = datetime_val
+        self.created_at = created_at
 
 
 def test_parse_int_valid() -> None:
@@ -45,7 +45,7 @@ def test_print_item_without_datetime(capsys) -> None:
 def test_print_item_with_datetime(capsys) -> None:
     """Test formatting item with datetime."""
     dt = datetime(2026, 7, 16, 10, 30, 0)
-    item = MockItem("note", "Test note", datetime_val=dt)
+    item = MockItem("note", "Test note", created_at=dt)
     print_item(2, item)
     captured = capsys.readouterr()
     assert "2. (2026-07-16 10:30:00) [note]: Test note" in captured.out

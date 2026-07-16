@@ -3,8 +3,8 @@
 
 def print_item(index: int, item) -> None:
     """Format and print an individual item."""
-    if item.datetime:
-        print(f"{index}. ({item.datetime}) [{item.type}]: {item.text}")
+    if item.created_at:
+        print(f"{index}. ({item.created_at.strftime('%Y-%m-%d %H:%M:%S')}) [{item.type}]: {item.text}")
     else:
         print(f"{index}. [{item.type}]: {item.text}")
 

@@ -4,7 +4,7 @@ from datetime import datetime
 
 from core.exceptions import CliInputError
 from interfaces.storage import Storage
-from models.item import Item
+from models.item import Item, ItemType
 from services.item_type_classifier import ItemTypeClassifier, SUPPORTED_ITEM_TYPES
 
 
@@ -23,7 +23,13 @@ class CaptureService:
         """Add item of specified type."""
         if note_type not in SUPPORTED_ITEM_TYPES:
             raise CliInputError(f"Unsupported item type: {note_type}")
-        item = Item.from_input(note_type=note_type, text=text, created_at=created_at)
+        
+        item_type = ItemType(note_type)
+        item = Item(
+            type=item_type,
+            text=text,
+            created_at=created_at,
+        )
         self.storage.add_item(item)
 
     def add_captured_item(self, text: str, created_at: datetime, note_type: str | None = None) -> str:

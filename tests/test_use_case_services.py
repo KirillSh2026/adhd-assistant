@@ -5,6 +5,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from models.item import Item, ItemType
 from services.capture_service import CaptureService
 from services.item_type_classifier import ItemTypeClassifier
 from services.list_service import ListService
@@ -40,11 +41,9 @@ class TestCaptureService:
 
 class TestListService:
     def test_list_items_all(self):
-        from models.item import Item
-
         storage = MagicMock()
-        item1 = Item.from_input(note_type="task", text="Item 1", created_at=datetime.now())
-        item2 = Item.from_input(note_type="note", text="Item 2", created_at=datetime.now())
+        item1 = Item(type=ItemType.TASK, text="Item 1", created_at=datetime.now())
+        item2 = Item(type=ItemType.NOTE, text="Item 2", created_at=datetime.now())
         storage.load_items.return_value = [item1, item2]
 
         service = ListService(storage)
@@ -55,11 +54,9 @@ class TestListService:
         assert result[1] == (2, item2)
 
     def test_list_items_filtered_by_type(self):
-        from models.item import Item
-
         storage = MagicMock()
-        item1 = Item.from_input(note_type="task", text="Item 1", created_at=datetime.now())
-        item2 = Item.from_input(note_type="note", text="Item 2", created_at=datetime.now())
+        item1 = Item(type=ItemType.TASK, text="Item 1", created_at=datetime.now())
+        item2 = Item(type=ItemType.NOTE, text="Item 2", created_at=datetime.now())
         storage.load_items.return_value = [item1, item2]
 
         service = ListService(storage)
@@ -71,13 +68,9 @@ class TestListService:
 
 class TestRelationService:
     def test_link_items_normalizes_relation_type(self):
-        from models.item import Item
-
         storage = MagicMock()
-        item1 = Item.from_input(note_type="task", text="Item 1", created_at=datetime.now())
-        item1.id = "1"
-        item2 = Item.from_input(note_type="task", text="Item 2", created_at=datetime.now())
-        item2.id = "2"
+        item1 = Item(type=ItemType.TASK, text="Item 1", created_at=datetime.now(), id="1")
+        item2 = Item(type=ItemType.TASK, text="Item 2", created_at=datetime.now(), id="2")
         storage.load_items_for_relations.return_value = [item1, item2]
 
         service = RelationService(storage)
@@ -125,11 +118,10 @@ class TestItemServiceRegistry:
         classifier.classify.assert_called_once()
 
     def test_registry_delegates_to_list_service(self):
-        from models.item import Item
         from services.item_service_registry import ItemServiceRegistry
 
         storage = MagicMock()
-        item1 = Item.from_input(note_type="task", text="Item 1", created_at=datetime.now())
+        item1 = Item(type=ItemType.TASK, text="Item 1", created_at=datetime.now())
         storage.load_items.return_value = [item1]
 
         registry = ItemServiceRegistry(storage)
@@ -138,11 +130,10 @@ class TestItemServiceRegistry:
         assert len(result) == 1
 
     def test_legacy_item_service_still_works(self):
-        from models.item import Item
         from services.item_service import ItemService
 
         storage = MagicMock()
-        item1 = Item.from_input(note_type="task", text="Item 1", created_at=datetime.now())
+        item1 = Item(type=ItemType.TASK, text="Item 1", created_at=datetime.now())
         storage.load_items.return_value = [item1]
 
         service = ItemService(storage)

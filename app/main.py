@@ -16,7 +16,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
 from config.settings import get_settings
-from core.exceptions import AppError, ConfigurationError
+from core.exceptions import AppError, ConfigurationError, StorageError
 from services.item_service import ItemService
 from storage.json_storage import JsonStorage
 from cli.parser import parse_command_line
@@ -24,7 +24,12 @@ from cli.dispatcher import dispatch_command
 
 
 def get_service() -> ItemService:
-    """Initialize and return the ItemService with configured storage backend."""
+    """Initialize and return the ItemService with configured storage backend.
+    
+    Raises:
+        ConfigurationError: If backend configuration is invalid
+        StorageError: If storage initialization fails
+    """
     settings = get_settings()
     backend = settings.adhd_storage_backend
     notes_path = settings.adhd_notes_path
@@ -37,12 +42,22 @@ def get_service() -> ItemService:
 
         storage = PostgresStorage(dsn=database_url)
     else:
-        storage = JsonStorage(path=notes_path)
+        try:
+            storage = JsonStorage(path=notes_path)
+        except Exception as e:
+            raise StorageError(
+                f"Failed to initialize JSON storage at {notes_path}: {e}\n"
+                f"Make sure the directory is writable and valid."
+            ) from e
     return ItemService(storage=storage)
 
 
 def main() -> None:
-    """Main CLI entry point: parse sys.argv and dispatch to handler."""
+    """Main CLI entry point: parse sys.argv and dispatch to handler.
+    
+    Raises:
+        AppError: On any application error
+    """
     parsed = parse_command_line(sys.argv)
     
     if not parsed.command:
@@ -55,6 +70,12 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except StorageError as exc:
+        print(f"Storage Error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
     except AppError as exc:
         print(f"Error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    except Exception as exc:
+        print(f"Unexpected error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

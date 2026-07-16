@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from models.item import ItemType
 from services.item_service import ItemService
 from storage.json_storage import JsonStorage
 
@@ -15,8 +16,8 @@ def test_add_and_list_with_legacy_format(tmp_path):
     items = service.list_items("all")
     assert len(items) == 2
     assert items[0][0] == 1
-    assert items[0][1].type == "task"
-    assert items[0][1].datetime == "2026-01-01 10:00:00"
+    assert items[0][1].type == ItemType.TASK
+    assert items[0][1].created_at == datetime(2026, 1, 1, 10, 0, 0)
 
 
 def test_filtering_keeps_order_index_over_filtered_items(tmp_path):
@@ -41,4 +42,4 @@ def test_add_captured_item_classifies_text(tmp_path):
 
     items = service.list_items("all")
     assert resolved_type == "task"
-    assert items[0][1].type == "task"
+    assert items[0][1].type == ItemType.TASK

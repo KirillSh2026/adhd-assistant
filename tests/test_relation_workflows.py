@@ -3,16 +3,16 @@ from datetime import datetime
 import pytest
 
 from core.exceptions import UnsupportedStorageCapabilityError
-from models.item import Item
+from models.item import Item, ItemType, ItemStatus
 from services.item_service import ItemService
 
 
 class FakeAdvancedStorage:
     def __init__(self):
         self.items = [
-            Item(id="1", type="task", text="Купить молоко и хлеб", datetime="2026-01-01 10:00:00"),
-            Item(id="2", type="task", text="Купить молоко и хлеб вечером", datetime="2026-01-01 10:05:00"),
-            Item(id="3", type="note", text="Сегодня было много отвлечений", datetime="2026-01-01 10:10:00"),
+            Item(id="1", type=ItemType.TASK, text="Купить молоко и хлеб", created_at=datetime(2026, 1, 1, 10, 0, 0)),
+            Item(id="2", type=ItemType.TASK, text="Купить молоко и хлеб вечером", created_at=datetime(2026, 1, 1, 10, 5, 0)),
+            Item(id="3", type=ItemType.NOTE, text="Сегодня было много отвлечений", created_at=datetime(2026, 1, 1, 10, 10, 0)),
         ]
         self.saved_suggestions = []
         self.upsert_calls = []
@@ -194,4 +194,4 @@ def test_regular_add_item_still_works_with_classifier_changes(tmp_path):
     service.add_item("task", "Купить хлеб", datetime(2026, 1, 1, 12, 0, 0))
 
     items = service.list_items("all")
-    assert items[0][1].type == "task"
+    assert items[0][1].type == ItemType.TASK

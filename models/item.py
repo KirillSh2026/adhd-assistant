@@ -1,42 +1,73 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum
+from typing import Literal
 
 
-@dataclass
+class ItemType(str, Enum):
+    """Item type enumeration for domain model."""
+
+    TASK = "task"
+    NOTE = "note"
+    IDEA = "idea"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class ItemStatus(str, Enum):
+    """Item status enumeration for domain model."""
+
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+    DELETED = "deleted"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+@dataclass(frozen=True)
 class Item:
-    """Domain item with backward-compatible legacy JSON conversion."""
+    """Immutable domain item with strong typing and validation."""
 
-    type: str
+    type: ItemType
     text: str
-    datetime: str | None = None
     id: str | None = None
-    status: str | None = None
+    created_at: datetime | None = None
+    status: ItemStatus = ItemStatus.ACTIVE
 
-    @classmethod
-    def from_legacy_dict(cls, payload: dict) -> "Item":
-        return cls(
-            type=str(payload.get("type", "")),
-            text=str(payload.get("text", "")),
-            datetime=str(payload["datetime"]) if payload.get("datetime") else None,
-            id=str(payload["id"]) if payload.get("id") else None,
-            status=str(payload["status"]) if payload.get("status") else None,
-        )
+    def __post_init__(self) -> None:
+        """Validate and normalize text after initialization."""
+        if not self.text or not self.text.strip():
+            raise ValueError("Item text cannot be empty or whitespace-only")
 
-    @classmethod
-    def from_input(cls, note_type: str, text: str, created_at: datetime) -> "Item":
-        return cls(
-            type=note_type,
-            text=text,
-            datetime=created_at.strftime("%Y-%m-%d %H:%M:%S"),
-        )
-
-    def to_legacy_dict(self) -> dict:
-        data = {"type": self.type, "text": self.text}
-        if self.datetime:
-            data["datetime"] = self.datetime
-        return data
+    @property
+    def normalized_text(self) -> str:
+        """Get text with normalized whitespace."""
+        return " ".join(self.text.split())
 
     def has_text(self) -> bool:
+        """Check if item has non-empty text."""
         return bool(self.text.strip())
+
+    def with_id(self, item_id: str) -> "Item":
+        """Return new Item with updated ID (immutability pattern)."""
+        return Item(
+            type=self.type,
+            text=self.text,
+            id=item_id,
+            created_at=self.created_at,
+            status=self.status,
+        )
+
+    def with_status(self, status: ItemStatus) -> "Item":
+        """Return new Item with updated status (immutability pattern)."""
+        return Item(
+            type=self.type,
+            text=self.text,
+            id=self.id,
+            created_at=self.created_at,
+            status=status,
+        )

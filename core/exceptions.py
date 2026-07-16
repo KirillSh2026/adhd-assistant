@@ -14,12 +14,19 @@ class CliInputError(AppError, ValueError):
 
 
 class StorageError(AppError):
-    """Base storage error."""
+    """Base storage error - includes context about what failed."""
 
 
 class UnsupportedStorageCapabilityError(StorageError, RuntimeError):
-    """Raised when backend does not support requested capability."""
+    """Raised when backend does not support requested capability.
+    
+    Includes helpful migration guide (e.g., suggesting to use PostgreSQL backend).
+    """
 
 
 class StorageEntityNotFoundError(StorageError):
     """Raised when expected storage entity is not found."""
+
+
+class StorageCorruptionError(StorageError):
+    """Raised when storage file/database is corrupted."""
