@@ -1,0 +1,15 @@
+bin
+dev
+lib
+lib32
+lib64
+libx32
+mnt
+opt
+root
+run
+sbin
+tmp
+cdrom
+lost+found
+sys/
