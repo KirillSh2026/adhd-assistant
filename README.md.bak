@@ -1,0 +1,188 @@
+# ADHD AI Assistant
+
+CLI-прототип личного помощника для пользователя с СДВГ.
+
+## Быстрый старт
+
+```bash
+python app/main.py task "Купить продукты"
+python app/main.py capture "Купить продукты на завтра"
+python app/main.py dictate
+python app/main.py dictate /path/to/note.wav
+python app/main.py suggest-relations
+python app/main.py show-clusters
+python app/main.py list-relations
+python app/main.py link-items 2 5 depends_on "Сначала нужна базовая задача"
+python app/main.py confirm-relation 1 3 duplicate_of
+python app/main.py reject-relation 1 3 duplicate_of
+python app/main.py merge-items 1 3 --reason "Объединяем дубликаты"
+python app/main.py list-merges
+python app/main.py undo-merge
+python app/main.py list all
+python app/main.py list task
+python app/main.py clear
+```
+
+По умолчанию CLI использует JSON-хранилище: `data/notes.json`.
+
+Конфигурация окружения централизована в `config/settings.py` через `pydantic-settings`.
+CLI читает переменные (`ADHD_STORAGE_BACKEND`, `ADHD_NOTES_PATH`, `DATABASE_URL`, `ADHD_DICTATE_LANGUAGE`)
+из одного места при запуске.
+
+Команда `capture` автоматически определяет тип `task|note|idea` по тексту:
+- `python app/main.py capture "Купить продукты"` -> `task`
+- `python app/main.py capture "Идея: сделать быстрый режим фокуса"` -> `idea`
+
+Команда `dictate` распознает речь в текст и затем автоматически определяет тип:
+- из микрофона: `python app/main.py dictate`
+- из файла: `python app/main.py dictate /path/to/audio.wav`
+- при необходимости тип можно задать явно: `python app/main.py dictate task /path/to/audio.wav`
+
+Аудиофайл используется только для распознавания и **не сохраняется** в хранилище.
+
+## Связи, похожесть и объединение
+
+Расширенные команды отношений работают с PostgreSQL backend, потому что сохраняют данные в
+`item_dependency` и `item_merge`.
+
+```bash
+export ADHD_STORAGE_BACKEND=postgres
+export DATABASE_URL=******localhost:5432/adhd_assistant
+
+# Найти похожие записи и сохранить предложения в item_dependency
+python app/main.py suggest-relations
+
+# Показать кластеры похожих записей
+python app/main.py show-clusters
+
+# Показать все сохраненные связи или связи одного элемента
+python app/main.py list-relations
+python app/main.py list-relations 2
+
+# Явно связать элементы
+python app/main.py link-items 2 5 related "Обе записи про один контекст"
+python app/main.py link-items 4 2 depends_on "Сначала надо завершить подготовку"
+python app/main.py link-items 3 7 duplicate_of "Повтор одной и той же идеи"
+
+# Подтвердить предложенную связь
+python app/main.py confirm-relation 3 7 duplicate_of
+
+# Отклонить неподтвержденное предложение
+python app/main.py reject-relation 3 7 duplicate_of
+
+# Объединить несколько записей в одну
+python app/main.py merge-items 3 7 8 --reason "Объединяем дубликаты идеи"
+
+# Просмотреть историю merge и откатить последний merge
+python app/main.py list-merges
+python app/main.py undo-merge
+
+# Откатить конкретный merge по id
+python app/main.py undo-merge <merge_id>
+```
+
+Язык распознавания по умолчанию — `ru-RU`, изменить можно через `ADHD_DICTATE_LANGUAGE`:
+
+```bash
+export ADHD_DICTATE_LANGUAGE=en-US
+python app/main.py dictate
+```
+
+## Backend-хранилища
+
+### 1. JSON (по умолчанию)
+
+```bash
+export ADHD_STORAGE_BACKEND=json
+export ADHD_NOTES_PATH=data/notes.json
+python app/main.py list all
+```
+
+### 2. PostgreSQL
+
+```bash
+export ADHD_STORAGE_BACKEND=postgres
+export DATABASE_URL=postgresql://user:pass@localhost:5432/adhd_assistant
+python app/main.py list all
+```
+
+
+## Архитектура
+
+### Слой CLI
+
+CLI-логика организована в отдельном слое `cli/` для разделения ответственности:
+
+- **`app/main.py`** — тонкая точка входа: загружает настройки, создает сервис, делегирует в CLI layer
+- **`cli/formatters.py`** — функции форматирования вывода (print_item, print_relation и др.)
+- **`cli/utils.py`** — утилиты парсинга аргументов (parse_int и др.)
+- **`cli/commands/`** — обработчики команд, сгруппированные по функциональности:
+  - `cli/commands/__init__.py` — управление элементами (list/clear/add-by-type)
+  - `cli/commands/capture_commands.py` — захват текста и диктовка
+  - `cli/commands/relation_commands.py` — связи и зависимости
+  - `cli/commands/merge_commands.py` — объединение элементов и история
+- **`cli/dispatcher.py`** — маршрутизирует команды к обработчикам
+
+### Слой сервисов и хранилища
+
+- **`services/item_service.py`** — бизнес-логика CLI, работает через интерфейс Storage
+- **`interfaces/storage.py`** — контракт Storage; ItemService не знает о JSON/PostgreSQL
+- **`storage/json_storage.py`** и **`storage/postgres_storage.py`** — реализации Storage
+- **`config/settings.py`** — централизованная загрузка конфигурации через pydantic-settings
+- **`core/exceptions.py`** — иерархия доменных исключений
+## Зависимости
+
+```bash
+pip install -r requirements.txt
+```
+
+## Команды разработки
+
+### Проверка модулей
+
+```bash
+make check
+```
+
+### Тесты
+
+```bash
+make test
+```
+
+### Один тест
+
+```bash
+make test-one TEST=tests/test_item_service.py::test_add_and_list_with_legacy_format
+```
+
+### Миграции PostgreSQL
+
+```bash
+# Создать схему
+make migrate-up
+
+# Импортировать data/notes.json
+make migrate-import-json
+
+# Откатить последний импорт
+make migrate-rollback
+
+# Полностью удалить схему
+make migrate-down
+```
+
+## Миграция JSON -> PostgreSQL
+
+Пошаговый план и SQL-проверки:
+
+- `AI/03_migration.sql`
+- `scripts/migrate_json_to_postgres.py`
+
+## Архитектурные документы
+
+- `.github/copilot-instructions.md` — рабочие инструкции для AI-сессий
+- `AI/00_constitution.md` — принципы проекта
+- `AI/01_architecture.md` — архитектурные решения по БД
+- `AI/02_database_schema.sql` — зафиксированный PostgreSQL-диалект
+- `docs/database_schema.md` — визуальная ER-диаграмма

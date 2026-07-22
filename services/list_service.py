@@ -12,7 +12,7 @@ class ListService:
 
     def list_items(self, list_type: str) -> list[tuple[int, Item]]:
         """List items, optionally filtered by type.
-        
+
         Note: Items are already validated to have non-empty text in __post_init__,
         so no need to filter by has_text().
         """

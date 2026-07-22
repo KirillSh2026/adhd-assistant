@@ -1,0 +1,124 @@
+"""Entry point for ADHD Assistant Telegram bot.
+
+This is the main executable for running the Telegram bot.
+
+Usage:
+    python app/telegram_main.py
+
+Environment variables:
+    ADHD_TELEGRAM_TOKEN: Telegram bot token (required)
+    ADHD_STORAGE_BACKEND: json or postgres (default: json)
+    ADHD_NOTES_PATH: Path to JSON storage (default: data/notes.json)
+    DATABASE_URL: PostgreSQL connection string (if using postgres backend)
+    ADHD_DICTATE_LANGUAGE: Language for speech-to-text (default: ru)
+
+Example:
+    export ADHD_TELEGRAM_TOKEN=your_token_here
+    python app/telegram_main.py
+
+For testing/development:
+    ADHD_TELEGRAM_TOKEN=test_token python app/telegram_main.py --dry-run
+"""
+import sys
+from pathlib import Path
+
+# Ensure the project root is in the Python path so that `core` can be imported
+# when the script is executed directly (e.g., `python app/telegram_main.py`).
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+import logging
+import os
+from typing import Optional
+
+# Try to import telegram library
+try:
+    from telegram import Update
+    from telegram.ext import (
+        Application,
+        CommandHandler,
+        MessageHandler,
+        filters,
+        ContextTypes,
+    )
+except ImportError:
+    print("ERROR: python-telegram-bot library not found.")
+    print("Install it with: pip install python-telegram-bot")
+    sys.exit(1)
+
+from core.exceptions import ConfigurationError, StorageError
+from interfaces.storage import Storage
+from config.factory import get_storage
+from config.settings import get_settings
+from telegram_bot.telegram_handler import TelegramHandler
+
+# Setup logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+
+    async def run_polling(self) -> None:
+        """Run bot with polling (for development/local testing).
+
+        Requires ADHD_TELEGRAM_TOKEN environment variable.
+        """
+        logger.info("Starting bot with polling...")
+        app = await self.build()
+        await app.run_polling(allowed_updates=Update.ALL_TYPES)
+
+    async def run_webhook(self, webhook_url: str, port: int = 8080) -> None:
+        """Run bot with webhook (for production).
+
+        Args:
+            webhook_url: URL where Telegram will send updates
+            port: Local port to listen on
+        """
+        logger.info(f"Starting bot with webhook: {webhook_url}")
+        app = await self.build()
+        await app.run_webhook(
+            listen="0.0.0.0",
+            port=port,
+            url_path=self.token,
+            webhook_url=f"{webhook_url}/{self.token}",
+        )
+
+
+async def main() -> None:
+    """Main entry point for Telegram bot."""
+    settings = get_settings()
+
+    # Get bot token
+    token = os.environ.get("ADHD_TELEGRAM_TOKEN")
+    if not token:
+        logger.error(
+            "ERROR: ADHD_TELEGRAM_TOKEN not set. "
+            "Set it with: export ADHD_TELEGRAM_TOKEN=your_token_here"
+        )
+        sys.exit(1)
+
+    # Initialize storage
+    storage = get_storage()
+
+    # Create bot app with injected storage
+    bot_app = TelegramBotApp(token, storage)
+
+    # Run with polling (development) or webhook (production)
+    webhook_url = os.environ.get("ADHD_TELEGRAM_WEBHOOK_URL")
+    if webhook_url:
+        await bot_app.run_webhook(webhook_url)
+    else:
+        await bot_app.run_polling()
+
+
+if __name__ == "__main__":
+    import asyncio
+
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Bot interrupted")
+        sys.exit(0)

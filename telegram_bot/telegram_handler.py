@@ -1,19 +1,19 @@
 """Telegram bot handler for ADHD Assistant.
 
 This module handles Telegram updates and routes them to appropriate services.
-It follows the same pattern as the CLI layer: parse input \u2192 call services \u2192 format output.
+It follows the same pattern as the CLI layer: parse input → call services → format output.
 
 Architecture:
     Telegram Update
-      \u2193 (parsed by TelegramHandler)
+      ▼ (parsed by TelegramHandler)
     Use Case Services (CaptureService, ListService, RelationService, MergeService)
-      \u2193 (business logic)
+      ▼ (business logic)
     Domain Models (Item, Relation, etc.)
-      \u2193 (storage via Storage interface)
+      ▼ (storage via Storage interface)
     JSON or PostgreSQL Backend
-      \u2193 (persistence)
+      ▼ (persistence)
     TelegramFormatter
-      \u2193 (Telegram-specific formatting)
+      ▼ (Telegram-specific formatting)
     Telegram Message
 
 Key design:
@@ -22,6 +22,10 @@ Key design:
 - All business logic delegated to services
 - Handler focuses on: parsing, routing, formatting
 - Storage is injected via constructor (Dependency Injection pattern)
+
+Args:
+    storage: Storage backend instance (JSON or PostgreSQL)
+    project_name: Project name for item grouping (default: "Inbox")
 """
 
 from __future__ import annotations
@@ -32,6 +36,7 @@ from typing import Optional
 
 from models.item import Item, ItemType, ItemStatus
 from core.exceptions import (
+    StorageError,
     StorageError,
     StorageEntityNotFoundError,
     CliInputError,
@@ -57,7 +62,7 @@ class TelegramHandler:
     Storage is injected via constructor for proper dependency management.
 
     Args:
-        storage: Storage backend instance (JSON or PostgreSQL)
+        storage: Storage backend instance (must implement Storage interface)
         project_name: Project name for item grouping (default: "Inbox")
     """
 
@@ -78,183 +83,61 @@ class TelegramHandler:
     # ========================================================================
 
     def handle_task_command(self, text: str) -> str:
-        """Handle /task command: create a task item.
-
-        Args:
-            text: Task description
-
-        Returns:
-            Formatted response for Telegram
-        """
+        """Handle task command (text only)."""
         try:
-            if not text or not text.strip():
-                return self.formatter.error("Task text cannot be empty")
-
-            self.services.capture.add_item(
-                note_type="task",
-                text=text,
-                created_at=datetime.now(),
-            )
-            
-            item = Item(id="", type=ItemType.TASK, text=text)
-
-            return self.formatter.success(
-                f"\u2705 Task created: {item.text}",
-                item=item,
-            )
-
-        except (StorageError, CliInputError) as e:
-            logger.exception("Error creating task")
-            return self.formatter.error(f"Failed to create task: {str(e)}")
+            item = Item(type=ItemType.TASK, text=text, created_at=datetime.now())
+            self.services.add_item("task", text, datetime.now())
+            return self.formatter.success(f"Task created: {item.text}", item)
+        except ValueError as e:
+            return self.formatter.error(str(e))
 
     def handle_note_command(self, text: str) -> str:
-        """Handle /note command: create a note item.
-
-        Args:
-            text: Note content
-
-        Returns:
-            Formatted response for Telegram
-        """
+        """Handle note command (text only)."""
         try:
-            if not text or not text.strip():
-                return self.formatter.error("Note text cannot be empty")
-
-            self.services.capture.add_item(
-                note_type="note",
-                text=text,
-                created_at=datetime.now(),
-            )
-
-            item = Item(id="", type=ItemType.NOTE, text=text)
-
-            return self.formatter.success(
-                f"\ud83d\udcdd Note created: {item.text}",
-                item=item,
-            )
-
-        except (StorageError, CliInputError) as e:
-            logger.exception("Error creating note")
-            return self.formatter.error(f"Failed to create note: {str(e)}")
+            item = Item(type=ItemType.NOTE, text=text, created_at=datetime.now())
+            self.services.add_item("note", text, datetime.now())
+            return self.formatter.success(f"Note created: {item.text}", item)
+        except ValueError as e:
+            return self.formatter.error(str(e))
 
     def handle_idea_command(self, text: str) -> str:
-        """Handle /idea command: create an idea item.
-
-        Args:
-            text: Idea description
-
-        Returns:
-            Formatted response for Telegram
-        """
+        """Handle idea command (text only)."""
         try:
-            if not text or not text.strip():
-                return self.formatter.error("Idea text cannot be empty")
-
-            self.services.capture.add_item(
-                note_type="idea",
-                text=text,
-                created_at=datetime.now(),
-            )
-
-            item = Item(id="", type=ItemType.IDEA, text=text)
-
-            return self.formatter.success(
-                f"\ud83d\udca1 Idea created: {item.text}",
-                item=item,
-            )
-
-        except (StorageError, CliInputError) as e:
-            logger.exception("Error creating idea")
-            return self.formatter.error(f"Failed to create idea: {str(e)}")
+            item = Item(type=ItemType.IDEA, text=text, created_at=datetime.now())
+            self.services.add_item("idea", text, datetime.now())
+            return self.formatter.success(f"Idea created: {item.text}", item)
+        except ValueError as e:
+            return self.formatter.error(str(e))
 
     def handle_capture_command(self, text: str) -> str:
-        """Handle /capture command: auto-detect type and create item.
-
-        Args:
-            text: Item text (type auto-detected)
-
-        Returns:
-            Formatted response for Telegram
-        """
+        """Handle capture command (text only)."""
         try:
-            if not text or not text.strip():
-                return self.formatter.error("Text cannot be empty")
-
-            item_type = self.services.capture.add_captured_item(
+            item_type = self.services.add_captured_item(
                 text=text,
                 created_at=datetime.now(),
             )
+        except ValueError as e:
+            return self.formatter.error(str(e))
 
-            type_icon = {
-                "task": "\u2705",
-                "note": "\ud83d\udcdd",
-                "idea": "\ud83d\udca1",
-            }.get(item_type, "\ud83d\udccc")
+        type_icon = {
+            "task": "✅",
+            "note": "📝",
+            "idea": "💡",
+        }.get(item_type, "📌")
 
-            item = Item(id="", type=ItemType(item_type), text=text)
+        item = Item(id="", type=ItemType(item_type), text=text)
+        return self.formatter.success(
+            f"{type_icon} Captured as {item_type}: {item.text}",
+            item=item,
+        )
 
-            return self.formatter.success(
-                f"{type_icon} Captured as {item_type}: {item.text}",
-                item=item,
-            )
+    # ========================================================================
+    # RELATION HANDLERS (placeholder for future implementation)
+    # ========================================================================
 
-        except (StorageError, CliInputError) as e:
-            logger.exception("Error capturing item")
-            return self.formatter.error(f"Failed to capture: {str(e)}")
-
-    def handle_list_command(self, list_type: Optional[str] = None) -> str:
-        """Handle /list command: list items by type.
-
-        Args:
-            list_type: Item type to filter (task/note/idea/all)
-
-        Returns:
-            Formatted response for Telegram
-        """
-        try:
-            items_with_indices = self.services.list.list_items(list_type or "all")
-
-            if not items_with_indices:
-                return self.formatter.info("No items found")
-
-            # Extract just the Item objects from (index, item) tuples
-            items = [item for _, item in items_with_indices]
-            
-            return self.formatter.list_items(items)
-
-        except (StorageError, CliInputError) as e:
-            logger.exception("Error listing items")
-            return self.formatter.error(f"Failed to list items: {str(e)}")
-
-    def handle_clear_command(self) -> str:
-        """Handle /clear command: remove all items (with confirmation).
-
-        Returns:
-            Formatted response for Telegram
-        """
-        try:
-            self.services.capture.clear_items()
-            return self.formatter.success("\ud83d\uddd1\ufe0f All items cleared")
-
-        except StorageError as e:
-            logger.exception("Error clearing items")
-            return self.formatter.error(f"Failed to clear items: {str(e)}")
-
-    def handle_help_command(self) -> str:
-        """Handle /help command: show available commands.
-
-        Returns:
-            Formatted help text for Telegram
-        """
-        return self.formatter.help_text()
-
-    def handle_start_command(self) -> str:
-        """Handle /start command: welcome message.
-
-        Returns:
-            Welcome text for Telegram
-        """
-        return self.formatter.welcome_text()
+    def handle_relation_command(self, text: str) -> str:
+        """Handle relation command (placeholder)."""
+        return self.formatter.info("Relation functionality is not yet implemented.")
 
     # ========================================================================
     # MESSAGE HANDLERS
@@ -278,8 +161,44 @@ class TelegramHandler:
         return self.handle_capture_command(text)
 
     # ========================================================================
+    # LIST & CLEAR HANDLERS
+    # ========================================================================
+
+    def handle_list_command(self, list_type: Optional[str] = None) -> str:
+        """Handle /list command."""
+        # Normalize the input: treat None or empty string as request for all items
+        if not list_type:
+            service_list_type = ""
+        else:
+            # Validate the list_type by trying to convert to ItemType
+            try:
+                item_type_enum = ItemType(list_type.lower())
+            except ValueError:
+                return self.formatter.error(
+                    f"Unknown item type: {list_type}. Use: task, note, idea"
+                )
+            service_list_type = item_type_enum.value  # which is the same as list_type.lower()
+
+        items_tuples = self.services.list_items(service_list_type)
+        items = [item for _, item in items_tuples]
+        return self.formatter.list_items(items)
+
+    def handle_clear_command(self) -> str:
+        """Handle /clear command."""
+        self.services.clear_items()
+        return self.formatter.success("All items cleared")
+
+    # ========================================================================
     # ERROR HANDLING
     # ========================================================================
+
+    def handle_start_command(self) -> str:
+        """Handle /start command."""
+        return self.formatter.welcome_text()
+
+    def handle_help_command(self) -> str:
+        """Handle /help command."""
+        return self.formatter.help_text()
 
     def handle_error(self, error: Exception) -> str:
         """Handle unexpected errors gracefully.
@@ -290,7 +209,7 @@ class TelegramHandler:
         Returns:
             User-friendly error message for Telegram
         """
-        logger.exception("Unexpected error in Telegram handler", exc_info=error)
+        logger.exception("Unexpected error in Telegram handler", exc_info=True)
 
         if isinstance(error, StorageError):
             return self.formatter.error(

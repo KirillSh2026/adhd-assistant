@@ -191,7 +191,7 @@ class RelationAnalysisService:
     def _tokenize(self, text: str) -> set[str]:
         return {
             token
-            for token in re.findall(r"[a-zA-Zа-яА-Я0-9_]+", text.lower())
+            for token in re.findall(r"[a-zA-Zа-яёА-ЯЁ0-9_]+", text.lower())
             if len(token) > 2 and token not in STOP_WORDS
         }
 

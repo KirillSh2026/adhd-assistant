@@ -1,0 +1,63 @@
+"""Storage and service factory functions.
+
+Shared initialization logic used by both CLI and Telegram bot entry points.
+"""
+
+from __future__ import annotations
+
+from core.exceptions import ConfigurationError, StorageError
+from interfaces.storage import Storage
+from services.item_service_registry import ItemServiceRegistry
+from services.item_type_classifier import ItemTypeClassifier
+from services.relation_analysis_service import RelationAnalysisService
+from config.settings import get_settings
+
+
+def get_storage() -> Storage:
+    """Initialize and return the configured storage backend.
+
+    Raises:
+        ConfigurationError: If backend configuration is invalid
+        StorageError: If storage initialization fails
+    """
+    settings = get_settings()
+    backend = settings.adhd_storage_backend
+    notes_path = settings.adhd_notes_path
+    database_url = settings.database_url.strip()
+
+    if backend == "postgres":
+        if not database_url:
+            raise ConfigurationError(
+                "DATABASE_URL is required when ADHD_STORAGE_BACKEND=postgres"
+            )
+        # Append optional PostgreSQL connection parameters (e.g., sslmode=require)
+        opts = settings.adhd_postgres_options.strip()
+        if opts:
+            separator = "&" if "?" in database_url else "?"
+            database_url = f"{database_url}{separator}{opts}"
+        from storage.postgres.storage import PostgresStorage
+
+        return PostgresStorage(dsn=database_url)
+    else:
+        try:
+            from storage.json_storage import JsonStorage
+
+            return JsonStorage(path=notes_path)
+        except Exception as e:
+            raise StorageError(
+                f"Failed to initialize JSON storage at {notes_path}: {e}\n"
+                f"Make sure the directory is writable and valid."
+            ) from e
+
+
+def get_service() -> ItemServiceRegistry:
+    """Initialize and return the ItemServiceRegistry with configured storage backend.
+
+    Raises:
+        ConfigurationError: If backend configuration is invalid
+        StorageError: If storage initialization fails
+    """
+    storage = get_storage()
+    classifier = ItemTypeClassifier()
+    relation_analyzer = RelationAnalysisService()
+    return ItemServiceRegistry(storage, classifier, relation_analyzer)

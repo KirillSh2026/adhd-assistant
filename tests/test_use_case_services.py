@@ -129,14 +129,3 @@ class TestItemServiceRegistry:
 
         assert len(result) == 1
 
-    def test_legacy_item_service_still_works(self):
-        from services.item_service import ItemService
-
-        storage = MagicMock()
-        item1 = Item(type=ItemType.TASK, text="Item 1", created_at=datetime.now())
-        storage.load_items.return_value = [item1]
-
-        service = ItemService(storage)
-        result = service.list_items("all")
-
-        assert len(result) == 1

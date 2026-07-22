@@ -19,10 +19,18 @@ Example:
 For testing/development:
     ADHD_TELEGRAM_TOKEN=test_token python app/telegram_main.py --dry-run
 """
+import sys
+from pathlib import Path
+
+# Ensure the project root is in the Python path so that `core` can be imported
+# when the script is executed directly (e.g., `python app/telegram_main.py`).
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 import logging
 import os
-import sys
+import asyncio
 from typing import Optional
 
 # Try to import telegram library
@@ -40,10 +48,10 @@ except ImportError:
     print("Install it with: pip install python-telegram-bot")
     sys.exit(1)
 
-from config.settings import get_settings
 from core.exceptions import ConfigurationError, StorageError
 from interfaces.storage import Storage
-from storage.json_storage import JsonStorage
+from config.factory import get_storage
+from config.settings import get_settings
 from telegram_bot.telegram_handler import TelegramHandler
 
 # Setup logging
@@ -52,33 +60,6 @@ logging.basicConfig(
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
-
-
-def get_storage() -> Storage:
-    """Initialize and return the configured storage backend.
-    
-    Raises:
-        ConfigurationError: If backend configuration is invalid
-        StorageError: If storage initialization fails
-    """
-    settings = get_settings()
-    backend = settings.adhd_storage_backend
-    notes_path = settings.adhd_notes_path
-    database_url = settings.database_url.strip()
-
-    if backend == "postgres":
-        if not database_url:
-            raise ConfigurationError("DATABASE_URL is required when ADHD_STORAGE_BACKEND=postgres")
-        from storage.postgres_storage import PostgresStorage
-        return PostgresStorage(dsn=database_url)
-    else:
-        try:
-            return JsonStorage(path=notes_path)
-        except Exception as e:
-            raise StorageError(
-                f"Failed to initialize JSON storage at {notes_path}: {e}\n"
-                f"Make sure the directory is writable and valid."
-            ) from e
 
 
 class TelegramBotApp:
@@ -100,68 +81,7 @@ class TelegramBotApp:
         self.handler = TelegramHandler(storage, project_name)
         self.app = None
 
-    async def start_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /start command."""
-        response = self.handler.handle_start_command()
-        await update.message.reply_text(response, parse_mode="Markdown")
-
-    async def help_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /help command."""
-        response = self.handler.handle_help_command()
-        await update.message.reply_text(response, parse_mode="Markdown")
-
-    async def task_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /task command."""
-        text = " ".join(context.args) if context.args else ""
-        response = self.handler.handle_task_command(text)
-        await update.message.reply_text(response, parse_mode="Markdown")
-
-    async def note_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /note command."""
-        text = " ".join(context.args) if context.args else ""
-        response = self.handler.handle_note_command(text)
-        await update.message.reply_text(response, parse_mode="Markdown")
-
-    async def idea_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /idea command."""
-        text = " ".join(context.args) if context.args else ""
-        response = self.handler.handle_idea_command(text)
-        await update.message.reply_text(response, parse_mode="Markdown")
-
-    async def capture_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /capture command."""
-        text = " ".join(context.args) if context.args else ""
-        response = self.handler.handle_capture_command(text)
-        await update.message.reply_text(response, parse_mode="Markdown")
-
-    async def list_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /list command."""
-        list_type = context.args[0] if context.args else None
-        response = self.handler.handle_list_command(list_type)
-        await update.message.reply_text(response, parse_mode="Markdown")
-
-    async def clear_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /clear command (with confirmation)."""
-        response = self.handler.handle_clear_command()
-        await update.message.reply_text(response, parse_mode="Markdown")
-
-    async def message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle regular messages."""
-        text = update.message.text
-        response = self.handler.handle_message(text)
-
-        if response:
-            await update.message.reply_text(response, parse_mode="Markdown")
-
-    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle errors."""
-        logger.error(f"Update {update} caused error {context.error}")
-
-        if update and update.message:
-            response = self.handler.handle_error(context.error)
-            await update.message.reply_text(response, parse_mode="Markdown")
-
-    async def build(self) -> Application:
+    def build(self) -> Application:
         """Build and configure bot application.
 
         Returns:
@@ -187,23 +107,108 @@ class TelegramBotApp:
 
         return self.app
 
+    async def start_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /start command."""
+        response = self.handler.handle_start_command()
+        msg = update.effective_message
+        if msg:
+            await msg.reply_text(response)
+
+    async def help_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /help command."""
+        response = self.handler.handle_help_command()
+        msg = update.effective_message
+        if msg:
+            await msg.reply_text(response)
+
+    async def task_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /task command."""
+        text = " ".join(context.args) if context.args else ""
+        response = self.handler.handle_task_command(text)
+        msg = update.effective_message
+        if msg:
+            await msg.reply_text(response)
+
+    async def note_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /note command."""
+        text = " ".join(context.args) if context.args else ""
+        response = self.handler.handle_note_command(text)
+        msg = update.effective_message
+        if msg:
+            await msg.reply_text(response)
+
+    async def idea_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /idea command."""
+        text = " ".join(context.args) if context.args else ""
+        response = self.handler.handle_idea_command(text)
+        msg = update.effective_message
+        if msg:
+            await msg.reply_text(response)
+
+    async def capture_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /capture command."""
+        text = " ".join(context.args) if context.args else ""
+        response = self.handler.handle_capture_command(text)
+        msg = update.effective_message
+        if msg:
+            await msg.reply_text(response)
+
+    async def list_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /list command."""
+        list_type = context.args[0] if context.args else None
+        response = self.handler.handle_list_command(list_type)
+        msg = update.effective_message
+        if msg:
+            await msg.reply_text(response)
+
+    async def clear_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /clear command."""
+        response = self.handler.handle_clear_command()
+        msg = update.effective_message
+        if msg:
+            await msg.reply_text(response)
+
+    async def message_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle regular messages."""
+        msg = update.effective_message
+        if msg and msg.text:
+            text = msg.text
+            response = self.handler.handle_message(text)
+
+            if response:
+                await msg.reply_text(response)
+
+    async def error_handler(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle errors."""
+        logger.error(f"Update {update} caused error {context.error}")
+
+        if update:
+            # Try to get a message to reply to (works for message, edited_message, etc.)
+            msg = update.effective_message
+            if msg:
+                response = self.handler.handle_error(context.error)
+                await msg.reply_text(response)
+
     async def run_polling(self) -> None:
         """Run bot with polling (for development/local testing).
 
         Requires ADHD_TELEGRAM_TOKEN environment variable.
         """
         logger.info("Starting bot with polling...")
-        app = await self.build()
-
+        app = self.build()
         await app.initialize()
         await app.start()
         await app.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-
-        logger.info("Bot started. Press Ctrl+C to stop.")
+        # Wait until the application is stopped (e.g., via Ctrl+C)
         try:
-            await app.updater.idle()
-        except KeyboardInterrupt:
-            logger.info("Bot stopped")
+            # We'll wait for an event that is set when we want to stop.
+            # For now, we can just sleep in a loop until a keyboard interrupt.
+            # But note: we are already in an async context and we want to be able to cancel.
+            # We can create a future that never resolves until we cancel it.
+            stop_event = asyncio.Event()
+            await stop_event.wait()
+        except asyncio.CancelledError:
+            pass
         finally:
             await app.updater.stop()
             await app.stop()
@@ -217,8 +222,7 @@ class TelegramBotApp:
             port: Local port to listen on
         """
         logger.info(f"Starting bot with webhook: {webhook_url}")
-        app = await self.build()
-
+        app = self.build()
         await app.initialize()
         await app.start()
         await app.updater.start_webhook(
@@ -227,8 +231,16 @@ class TelegramBotApp:
             url_path=self.token,
             webhook_url=f"{webhook_url}/{self.token}",
         )
-
-        logger.info(f"Bot started on port {port}")
+        # Keep the application running until stopped
+        try:
+            stop_event = asyncio.Event()
+            await stop_event.wait()
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await app.updater.stop()
+            await app.stop()
+            await app.shutdown()
 
 
 async def main() -> None:
@@ -259,8 +271,6 @@ async def main() -> None:
 
 
 if __name__ == "__main__":
-    import asyncio
-
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

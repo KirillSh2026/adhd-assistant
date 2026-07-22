@@ -13,6 +13,8 @@ class AppSettings(BaseSettings):
     adhd_notes_path: str = "data/notes.json"
     database_url: str = ""
     adhd_dictate_language: str = "ru-RU"
+    # Optional PostgreSQL connection options (e.g., "sslmode=require")
+    adhd_postgres_options: str = ""
 
     model_config = SettingsConfigDict(
         env_file=".env",

@@ -26,13 +26,20 @@ class PostgresStorage:
                 """
                 INSERT INTO project (name, description, status)
                 VALUES (%s, %s, 'active')
+                ON CONFLICT (name) DO UPDATE
+                  SET name = EXCLUDED.name
                 RETURNING id
                 """,
                 (self.project_name, "Created by CLI storage backend"),
             )
             created = cur.fetchone()
             if not created:
-                raise StorageError("Failed to create default project")
+                # Another thread inserted, so select again
+                cur.execute("SELECT id FROM project WHERE name = %s LIMIT 1", (self.project_name,))
+                row = cur.fetchone()
+                if not row:
+                    raise StorageError("Failed to get or create project")
+                return str(row[0])
             return str(created[0])
 
     def load_items(self) -> list[Item]:

@@ -7,10 +7,7 @@ CLI-прототип личного помощника для пользоват
 ```bash
 python app/main.py task "Купить продукты"
 python app/main.py capture "Купить продукты на завтра"
-python app/main.py dictate
 python app/main.py dictate /path/to/note.wav
-python app/main.py suggest-relations
-python app/main.py show-clusters
 python app/main.py list-relations
 python app/main.py link-items 2 5 depends_on "Сначала нужна базовая задача"
 python app/main.py confirm-relation 1 3 duplicate_of
@@ -26,7 +23,7 @@ python app/main.py clear
 По умолчанию CLI использует JSON-хранилище: `data/notes.json`.
 
 Конфигурация окружения централизована в `config/settings.py` через `pydantic-settings`.
-CLI читает переменные (`ADHD_STORAGE_BACKEND`, `ADHD_NOTES_PATH`, `DATABASE_URL`, `ADHD_DICTATE_LANGUAGE`)
+CLI читает переменные (`ADHD_STORAGE_BACKEND`, `ADHD_NOTES_PATH`, `DATABASE_URL`, `ADHD_DICTATE_LANGUAGE`, `ADHD_POSTGRES_OPTIONS`)
 из одного места при запуске.
 
 Команда `capture` автоматически определяет тип `task|note|idea` по тексту:
@@ -103,11 +100,10 @@ python app/main.py list all
 ```bash
 export ADHD_STORAGE_BACKEND=postgres
 export DATABASE_URL=postgresql://user:pass@localhost:5432/adhd_assistant
+export ADHD_POSTGRES_OPTIONS="sslmode=require"
 python app/main.py list all
 ```
-
-
-## Архитектура
+> 💡 Для подключения к SupaBase или другим облачным PostgreSQL провайдерам обычно требуется параметр `sslmode=require`. Вы можете установить его через переменную окружения `ADHD_POSTGRES_OPTIONS`.
 
 ### Слой CLI
 

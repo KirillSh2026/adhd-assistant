@@ -29,33 +29,27 @@ def dispatch_command(service: ItemServiceRegistry, command: str, args: list[str]
         CliInputError: On invalid arguments
         UnsupportedStorageCapabilityError: If storage backend doesn't support command
     """
+    # Map of command strings to handler functions
+    COMMANDS = {
+        "list": list_items,
+        "clear": clear_items,
+        "capture": add_from_text_capture,
+        "dictate": add_from_dictation,
+        "suggest-relations": show_suggested_relations,
+        "show-clusters": show_clusters,
+        "list-relations": show_relations,
+        "link-items": link_items,
+        "confirm-relation": confirm_relation,
+        "reject-relation": reject_relation,
+        "merge-items": merge_items,
+        "list-merges": list_merges,
+        "undo-merge": undo_merge,
+    }
+
     try:
-        if command == "list":
-            list_items(service, args)
-        elif command == "clear":
-            clear_items(service, args)
-        elif command == "capture":
-            add_from_text_capture(service, args)
-        elif command == "dictate":
-            add_from_dictation(service, args)
-        elif command == "suggest-relations":
-            show_suggested_relations(service, args)
-        elif command == "show-clusters":
-            show_clusters(service, args)
-        elif command == "list-relations":
-            show_relations(service, args)
-        elif command == "link-items":
-            link_items(service, args)
-        elif command == "confirm-relation":
-            confirm_relation(service, args)
-        elif command == "reject-relation":
-            reject_relation(service, args)
-        elif command == "merge-items":
-            merge_items(service, args)
-        elif command == "list-merges":
-            list_merges(service, args)
-        elif command == "undo-merge":
-            undo_merge(service, args)
+        handler = COMMANDS.get(command)
+        if handler is not None:
+            handler(service, args)
         elif command in SUPPORTED_ITEM_TYPES:
             if args:
                 add_item_by_type(service, command, args)
@@ -72,7 +66,7 @@ def dispatch_command(service: ItemServiceRegistry, command: str, args: list[str]
         error_msg = str(e)
         if "PostgreSQL" in error_msg or "postgres" in error_msg:
             raise CliInputError(
-                f"\u274c This command requires PostgreSQL backend.\n\n"
+                f"❌ This command requires PostgreSQL backend.\n\n"
                 f"Details:\n{error_msg}\n\n"
                 f"To enable PostgreSQL:\n"
                 f"  1. Set up PostgreSQL database\n"

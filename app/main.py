@@ -7,75 +7,29 @@ It handles:
 3. Exception wrapping for clean error reporting
 4. Delegation to CLI dispatcher layer
 """
-
-from pathlib import Path
 import sys
-import warnings
+from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+# Ensure the project root is in the Python path so that `core` can be imported
+# when the script is executed directly (e.g., `python app/main.py`).
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import get_settings
-from core.exceptions import AppError, ConfigurationError, StorageError
-from interfaces.storage import Storage
-from services.item_service_registry import ItemServiceRegistry
-from services.item_type_classifier import ItemTypeClassifier
-from services.relation_analysis_service import RelationAnalysisService
-from storage.json_storage import JsonStorage
+from core.exceptions import AppError, StorageError
 from cli.parser import parse_command_line
 from cli.dispatcher import dispatch_command
-
-
-def get_storage() -> Storage:
-    """Initialize and return the configured storage backend.
-    
-    Raises:
-        ConfigurationError: If backend configuration is invalid
-        StorageError: If storage initialization fails
-    """
-    settings = get_settings()
-    backend = settings.adhd_storage_backend
-    notes_path = settings.adhd_notes_path
-    database_url = settings.database_url.strip()
-
-    if backend == "postgres":
-        if not database_url:
-            raise ConfigurationError("DATABASE_URL is required when ADHD_STORAGE_BACKEND=postgres")
-        from storage.postgres_storage import PostgresStorage
-
-        return PostgresStorage(dsn=database_url)
-    else:
-        try:
-            return JsonStorage(path=notes_path)
-        except Exception as e:
-            raise StorageError(
-                f"Failed to initialize JSON storage at {notes_path}: {e}\n"
-                f"Make sure the directory is writable and valid."
-            ) from e
-
-
-def get_service() -> ItemServiceRegistry:
-    """Initialize and return the ItemServiceRegistry with configured storage backend.
-    
-    Raises:
-        ConfigurationError: If backend configuration is invalid
-        StorageError: If storage initialization fails
-    """
-    storage = get_storage()
-    classifier = ItemTypeClassifier()
-    relation_analyzer = RelationAnalysisService()
-    return ItemServiceRegistry(storage, classifier, relation_analyzer)
+from config.factory import get_service
 
 
 def main() -> None:
     """Main CLI entry point: parse sys.argv and dispatch to handler.
-    
+
     Raises:
         AppError: On any application error
     """
     parsed = parse_command_line(sys.argv)
-    
+
     if not parsed.command:
         return  # No command provided
 
@@ -86,12 +40,6 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
-    except StorageError as exc:
-        print(f"Storage Error: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
-    except AppError as exc:
+    except (StorageError, AppError) as exc:
         print(f"Error: {exc}", file=sys.stderr)
-        raise SystemExit(1) from exc
-    except Exception as exc:
-        print(f"Unexpected error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

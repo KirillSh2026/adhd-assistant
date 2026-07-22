@@ -267,6 +267,7 @@ make migrate-up
 ```bash
 export ADHD_STORAGE_BACKEND=postgres
 export DATABASE_URL=postgresql://adhd:adhd@localhost:5432/adhd_assistant
+export ADHD_POSTGRES_OPTIONS="sslmode=require"
 python app/main.py list all
 ```
 
